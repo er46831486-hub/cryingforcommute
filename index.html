@@ -119,7 +119,8 @@
     padding:14px; margin-bottom:10px; box-shadow:var(--shadow);
   }
   .card-head{display:flex; justify-content:space-between; align-items:center; gap:8px;}
-  .card-title{display:flex; align-items:center; gap:10px; min-width:0;}
+  .card-title{display:flex; align-items:center; gap:10px; min-width:0; width:100%;}
+  .card-titletext{min-width:0; flex:1;}
   .tag{
     font-size:11px; font-weight:800; color:#fff; border-radius:7px; padding:4px 8px;
     flex-shrink:0;
@@ -128,6 +129,13 @@
   .card-sub{font-size:12px; color:var(--sub); margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
   .gearbtn{background:var(--bg); border:1px solid var(--border); color:var(--sub); font-size:11.5px; font-weight:700; padding:6px 10px; border-radius:8px; flex-shrink:0;}
   .gearbtn:active{opacity:.6;}
+  .gearbtn.ghost{color:var(--bad); border-color:var(--bad);}
+  /* 公車卡片的編輯／刪除按鈕獨立一列放在卡片最下面，不跟站名同一行搶空間，
+     不管站名多長都不會被按鈕擋住，每張卡片的按鈕位置也都固定對齊。 */
+  .busActions{
+    display:flex; justify-content:flex-end; gap:8px;
+    margin-top:11px; padding-top:11px; border-top:1px solid var(--border);
+  }
   .card.clickable{cursor:pointer;}
   .card.clickable:active{opacity:.75;}
   .clickable{cursor:pointer;}
@@ -233,7 +241,7 @@
 <div id="youbikeCard"></div>
 
 <div class="footer">
-  資料來源：TDX 運輸資料流通服務平臺<br>每 20 秒自動更新（背景時暫停）· 點卡片看更多細節
+  資料來源：TDX 運輸資料流通服務平臺<br>每 30 秒自動更新（背景時暫停）· 點卡片看更多細節
 </div>
 
 <!-- Shared bottom sheet modal -->
@@ -254,7 +262,7 @@
    因為根本沒抓到新版程式碼。這裡每次打開頁面都會用 no-store 重新跟伺服器要一次
    最新的 index.html，比對版本字串，不一樣就自動強制重新整理一次拿到最新版，
    不用使用者自己想辦法清快取。 */
-const APP_VERSION = '2026091702';
+const APP_VERSION = '2026091704';
 (function selfUpdateCheck(){
   try{
     const guardKey = 'appVersionReloadGuard';
@@ -886,17 +894,17 @@ function renderBusSkeleton(){
       <div class="card-head">
         <div class="card-title">
           <span class="tag" style="background:${r.color}">${r.tag}</span>
-          <div>
+          <div class="card-titletext">
             <div class="card-name">${picked ? picked.StopName : modeLabel+'尚未選站牌'}</div>
             <div class="card-sub">${picked ? (modeLabel+'站') : '點齒輪設定'}</div>
           </div>
         </div>
-        <div style="display:flex; gap:6px;">
-          <button class="gearbtn" data-route="${r.key}" data-act="edit">編輯</button>
-          <button class="gearbtn" data-route="${r.key}" data-act="del">刪除</button>
-        </div>
       </div>
       <div class="etalist" id="bus-eta-${r.key}"><div class="skeleton" style="${picked?'':'display:none;'}"></div>${picked?'':'<div class=\"muted\">尚未設定站牌</div>'}</div>
+      <div class="busActions">
+        <button class="gearbtn" data-route="${r.key}" data-act="edit">編輯站牌</button>
+        <button class="gearbtn ghost" data-route="${r.key}" data-act="del">刪除路線</button>
+      </div>
     </div>`;
   }).join('') + `
     <div class="card addroute" id="addRouteCard">＋ 新增公車路線</div>`;
@@ -1369,9 +1377,9 @@ renderAll();
 refreshAll();
 autoLocateYouBike(); // 打開網頁就自動要求定位，不用使用者按按鈕
 
-// 每 20 秒觸發一次，但畫面不在前景、或使用者正打開某個彈窗（例如選站牌）時跳過——
+// 每 30 秒觸發一次，但畫面不在前景、或使用者正打開某個彈窗（例如選站牌）時跳過——
 // 使用者正在等的操作已經走 high 優先權排到最前面了，背景這輪就不要再去搶額度、拖累它。
-const AUTO_REFRESH_MS = 20000;
+const AUTO_REFRESH_MS = 30000;
 setInterval(()=>{
   if(document.visibilityState === 'visible' && !overlay.classList.contains('show')) refreshAll();
 }, AUTO_REFRESH_MS);
