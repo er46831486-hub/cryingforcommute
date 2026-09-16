@@ -98,10 +98,13 @@
   .hero-trains{margin-top:14px; display:flex; flex-direction:column; gap:8px;}
   .hero-train{
     display:flex; justify-content:space-between; align-items:center;
-    background:var(--bg); border:1px solid var(--border); border-radius:var(--radius-sm); padding:11px 13px;
-    cursor:pointer;
+    background:var(--bg); border:1px solid var(--border); border-radius:var(--radius-sm); padding:11px 13px 11px 10px;
+    cursor:pointer; border-left:4px solid var(--sub);
   }
   .hero-train:active{opacity:.65;}
+  .tt-express{ border-left-color:#c9622c; }
+  .tt-fast{ border-left-color:#3a8f9e; }
+  .tt-local{ border-left-color:#3a8f5c; }
   .hero-train .l{font-size:13.5px; font-weight:600;}
   .hero-train .l small{display:block; font-size:11.5px; color:var(--sub); font-weight:500; margin-top:2px;}
   .hero-train .r{font-size:19px; font-weight:800; text-align:right; font-variant-numeric:tabular-nums; color:var(--accent);}
@@ -514,6 +517,24 @@ function enrichTraInBackground(mode){
   }).catch(()=>{});
 }
 
+// 簡約豎槓分色：自強(含普悠瑪/太魯閣) / 區間快 / 區間，其餘車種用預設中性色。
+function trainTypeClass(name){
+  if(name.includes('自強') || name.includes('普悠瑪') || name.includes('太魯閣')) return 'tt-express';
+  if(name.includes('區間快')) return 'tt-fast';
+  if(name.includes('區間')) return 'tt-local';
+  return '';
+}
+// 用發車時間＋抵達時間算行車時間，跨過午夜（抵達時刻比發車時刻小）就自動加一天。
+function formatDuration(depHHMM, arrHHMM){
+  if(!depHHMM || !arrHHMM) return null;
+  const [dh,dm] = depHHMM.split(':').map(Number);
+  const [ah,am] = arrHHMM.split(':').map(Number);
+  let diff = (ah*60+am) - (dh*60+dm);
+  if(diff < 0) diff += 24*60;
+  const h = Math.floor(diff/60), m = diff%60;
+  return h>0 ? `${h}小時${m}分` : `${m}分`;
+}
+
 function renderTraTrains(trains, stale, errMsg){
   const el = document.getElementById('traTrains');
   if(!trains.length){
@@ -525,13 +546,15 @@ function renderTraTrains(trains, stale, errMsg){
   el.innerHTML = trains.map(t=>{
     const delay = t.DelayTime>0 ? `誤點 ${t.DelayTime} 分` : '準點';
     const price = fareForTrainType(fares, t.TrainTypeName.Zh_tw);
+    const dep = t.ScheduledDepartureTime.slice(0,5);
     const arr = findArrivalTime(mode, t.TrainNo);
-    const bits = [delay, price!=null?('$'+price):null, arr?('抵達 '+arr):null].filter(Boolean).join(' · ');
-    return `<div class="hero-train" data-trainno="${t.TrainNo}">
+    const duration = formatDuration(dep, arr);
+    const bits = [delay, price!=null?('$'+price):null, arr?('抵達 '+arr):null, duration?('車程 '+duration):null].filter(Boolean).join(' · ');
+    return `<div class="hero-train ${trainTypeClass(t.TrainTypeName.Zh_tw)}" data-trainno="${t.TrainNo}">
       <div class="l">${t.TrainTypeName.Zh_tw} ${t.TrainNo}
         <small>${bits}</small>
       </div>
-      <div class="r">${t.ScheduledDepartureTime.slice(0,5)}</div>
+      <div class="r">${dep}</div>
     </div>`;
   }).join('') + (stale ? `<div class="staleNote">更新失敗，顯示上次資料${errMsg?'（'+errMsg+'）':''}</div>` : '');
   el.querySelectorAll('.hero-train').forEach(row=>{
@@ -618,12 +641,15 @@ async function openTraRangePicker(){
       results.innerHTML = list.map(t=>{
         const info = t.DailyTrainInfo;
         const price = fareForTrainType(fares, info.TrainTypeName.Zh_tw);
-        return `<div class="stopitem">
+        const depT = t.OriginStopTime.DepartureTime.slice(0,5);
+        const arrT = t.DestinationStopTime.ArrivalTime.slice(0,5);
+        const duration = formatDuration(depT, arrT);
+        return `<div class="stopitem ${trainTypeClass(info.TrainTypeName.Zh_tw)}" style="border-left-width:4px; border-left-style:solid; padding-left:10px;">
           <div>
             <div class="n">${info.TrainTypeName.Zh_tw} ${info.TrainNo}</div>
-            <div class="d">抵達 ${t.DestinationStopTime.ArrivalTime.slice(0,5)}${price!=null?(' · $'+price):''}</div>
+            <div class="d">抵達 ${arrT}${duration?(' · 車程 '+duration):''}${price!=null?(' · $'+price):''}</div>
           </div>
-          <div style="font-weight:800; color:var(--accent);">${t.OriginStopTime.DepartureTime.slice(0,5)}</div>
+          <div style="font-weight:800; color:var(--accent);">${depT}</div>
         </div>`;
       }).join('');
     }catch(e){
@@ -645,10 +671,14 @@ async function openTrainDetail(trainNo){
   const renderDetail = (entry, fares, stale)=>{
     const info = entry.DailyTrainInfo;
     const price = fareForTrainType(fares, info.TrainTypeName.Zh_tw);
+    const depT = entry.OriginStopTime.DepartureTime.slice(0,5);
+    const arrT = entry.DestinationStopTime.ArrivalTime.slice(0,5);
+    const duration = formatDuration(depT, arrT);
     body.innerHTML = `
-      <div class="stopitem"><div><div class="n">車種／車次</div></div><div style="font-weight:800;">${info.TrainTypeName.Zh_tw} ${trainNo}</div></div>
-      <div class="stopitem"><div><div class="n">上車時間</div><div class="d">${entry.OriginStopTime.StationName.Zh_tw}</div></div><div style="font-weight:800; color:var(--accent);">${entry.OriginStopTime.DepartureTime.slice(0,5)}</div></div>
-      <div class="stopitem"><div><div class="n">抵達時間</div><div class="d">${entry.DestinationStopTime.StationName.Zh_tw}</div></div><div style="font-weight:800; color:var(--accent);">${entry.DestinationStopTime.ArrivalTime.slice(0,5)}</div></div>
+      <div class="stopitem ${trainTypeClass(info.TrainTypeName.Zh_tw)}" style="border-left-width:4px; border-left-style:solid; padding-left:10px;"><div><div class="n">車種／車次</div></div><div style="font-weight:800;">${info.TrainTypeName.Zh_tw} ${trainNo}</div></div>
+      <div class="stopitem"><div><div class="n">上車時間</div><div class="d">${entry.OriginStopTime.StationName.Zh_tw}</div></div><div style="font-weight:800; color:var(--accent);">${depT}</div></div>
+      <div class="stopitem"><div><div class="n">抵達時間</div><div class="d">${entry.DestinationStopTime.StationName.Zh_tw}</div></div><div style="font-weight:800; color:var(--accent);">${arrT}</div></div>
+      ${duration ? `<div class="stopitem"><div><div class="n">行車時間</div></div><div style="font-weight:800;">${duration}</div></div>` : ''}
       <div class="stopitem"><div><div class="n">全票票價</div></div><div style="font-weight:800;">${price!=null ? '$'+price : '—'}</div></div>
       ${info.Note && info.Note.Zh_tw ? `<p class="hint" style="margin-top:10px;">${info.Note.Zh_tw}</p>` : ''}
       ${stale ? `<div class="staleNote">更新失敗，顯示上次資料</div>` : ''}
@@ -866,17 +896,18 @@ function renderBusSkeleton(){
   });
 }
 
-// 修正過的判斷邏輯：TDX 文件寫得很清楚——
-// StopStatus=0 是正常狀態且 EstimateTime 一定有值；StopStatus=1 是「尚未發車」，
-// 大多數情況 EstimateTime 是 null（只有少數固定班表路線例外）；StopStatus 2~4 才是真的沒資料。
-// 之前的判斷寫反了（只接受 StopStatus===1），導致最常見的 StopStatus=0 正常資料反而被擋掉，
-// 這就是公車幾乎「查不到即時進站」的真正原因。現在改成：只要有 EstimateTime 或 NextBusTime
-// 任一個有值就顯示，不再用 StopStatus 卡掉正常資料。
+// StopStatus 官方定義：0=正常, 1=尚未發車, 2=交管不停靠, 3=末班車已過, 4=今日未營運。
+// 排查「除了某條路線其他都顯示沒資料」的問題時發現：那些「沒資料」的路線在當下時間點
+// 是真的末班車已過、今日沒車了（StopStatus 3/4），不是程式壞掉。但原本一律顯示
+// 「目前沒有預估到站資訊」，使用者沒辦法分辨是「壞了」還是「今天真的沒車了」。
+// 現在依 StopStatus 給出明確原因，一眼就能判斷是不是程式問題。
+const BUS_STATUS_NOTE = { 2:'目前交管不停靠', 3:'今日末班車已過', 4:'今日未營運' };
 function renderBusEtaBox(box, stop, stale, errMsg){
   if(!box) return;
   const hasTime = stop && (stop.EstimateTime != null || stop.NextBusTime);
   if(!hasTime){
-    box.innerHTML = '<div class="muted">目前沒有預估到站資訊</div>';
+    const note = stop && BUS_STATUS_NOTE[stop.StopStatus];
+    box.innerHTML = `<div class="muted">${note || '目前沒有預估到站資訊'}</div>`;
     return;
   }
   const m = stop.EstimateTime!=null ? Math.round(stop.EstimateTime/60) : minutesFrom(stop.NextBusTime);
@@ -1078,6 +1109,10 @@ function renderYoubikeCard(stale, errMsg){
 
 async function loadYouBike(){
   if(!userGeo) return; // 還沒定位成功就先跳過，不耗額度；autoLocateYouBike() 成功後會自己補一次
+  // 每次背景更新也重新定位一次：不然只有可借還數字在跳，人明明在移動、附近站點清單卻永遠不變。
+  // 瀏覽器端的定位不佔 TDX 額度，maximumAge 也讓它盡量沿用剛剛的定位結果、不會頻繁重新抓 GPS。
+  const freshGeo = await requestGeo();
+  if(freshGeo){ userGeo = freshGeo; saveCache('youbikeGeo', userGeo); }
   const city = nearestYoubikeCity(userGeo.lat, userGeo.lon);
   try{
     await getYoubikeStations(city);
