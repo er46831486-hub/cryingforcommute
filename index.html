@@ -227,7 +227,7 @@
 <div id="youbikeCard"></div>
 
 <div class="footer">
-  資料來源：TDX 運輸資料流通服務平臺<br>每 10 秒自動更新（背景時暫停）· 點卡片看更多細節
+  資料來源：TDX 運輸資料流通服務平臺<br>每 20 秒自動更新（背景時暫停）· 點卡片看更多細節
 </div>
 
 <!-- Shared bottom sheet modal -->
@@ -318,6 +318,7 @@ function setMode(m){
   currentMode = m;
   selectedKrtcStation = krtcDefaultStation();
   renderModeUI();
+  renderTraFromCache(); // 立刻畫出這個模式上次抓到的資料，不用等新的網路請求
   renderAll();
   refreshAll();
 }
@@ -353,6 +354,25 @@ async function getToken(){
 }
 
 function sleep(ms){ return new Promise(r=>setTimeout(r, ms)); }
+
+/* ====================== 分層快取：先畫舊資料，網路資料到了再換新 ======================
+   第 1 層（0ms）：畫面一開就從 localStorage 讀「上一次成功抓到的資料」直接畫出來，
+                    不用等任何網路請求，切換去程/回程、切捷運分頁也是先讀這層。
+   第 2 層（背景）：refreshAll() 照常打 API，成功後才覆蓋畫面、同時把新資料存回這層快取。
+   這樣「反應速度」跟「降低 API 呼叫頻率」兩件事可以分開處理，不用互相犧牲。 */
+const CACHE_PREFIX = 'cache_v1_';
+function saveCache(key, data){
+  try{ localStorage.setItem(CACHE_PREFIX+key, JSON.stringify({ t: Date.now(), data })); }catch(e){}
+}
+function loadCache(key, maxAgeMs){
+  try{
+    const raw = localStorage.getItem(CACHE_PREFIX+key);
+    if(!raw) return null;
+    const parsed = JSON.parse(raw);
+    if(maxAgeMs && (Date.now() - parsed.t) > maxAgeMs) return null;
+    return parsed.data;
+  }catch(e){ return null; }
+}
 
 // 全站唯一的請求佇列：所有 tdxGet 呼叫（不論來自定時刷新、手動刷新，
 // 還是彈窗裡的查詢）都會被排成一直線，強制間隔發送，
@@ -449,11 +469,24 @@ function renderTraTrains(trains, stale, errMsg){
   });
 }
 
-async function loadTRA(){
-  const el = document.getElementById('traTrains');
+// 畫面第 1 層：直接用記憶體裡（來自 localStorage 或前一次抓取）的資料同步畫出來，不等網路。
+function renderTraFromCache(){
   const mode = getMode();
   const cfg = TRA_DIRECTIONS[mode];
   document.getElementById('traRouteLabel').textContent = cfg.label;
+  const cached = lastTraTrainsByMode[mode];
+  if(cached && cached.length){
+    renderTraTrains(cached, false);
+  } else {
+    document.getElementById('traTrains').innerHTML = '<div class="skeleton"></div>';
+  }
+}
+
+async function loadTRA(){
+  const el = document.getElementById('traTrains');
+  const mode = getMode(); // 記住這次是為了哪個模式查的
+  const cfg = TRA_DIRECTIONS[mode];
+  if(mode === getMode()) document.getElementById('traRouteLabel').textContent = cfg.label;
   try{
     const data = await tdxGet(`/v2/Rail/TRA/LiveBoard/Station/${cfg.fromStation}`);
     const trains = (data||[])
@@ -461,8 +494,12 @@ async function loadTRA(){
       .sort((a,b)=> a.ScheduledDepartureTime.localeCompare(b.ScheduledDepartureTime))
       .slice(0,3);
     lastTraTrainsByMode[mode] = trains;
-    renderTraTrains(trains, false);
+    saveCache('tra_'+mode, trains);
+    // 這通請求發出去之後，使用者可能已經切到另一個模式了——
+    // 這種「慢半拍」的回應只更新快取，畫面交給目前真正在顯示的模式處理，不能蓋過去。
+    if(mode === getMode()) renderTraTrains(trains, false);
   }catch(e){
+    if(mode !== getMode()) return;
     const cached = lastTraTrainsByMode[mode];
     if(cached && cached.length){
       renderTraTrains(cached, true, e.message);
@@ -472,43 +509,38 @@ async function loadTRA(){
   }
 }
 
-/* ---- 台鐵：自訂時間區段查詢（用當天完整時刻表，非即時誤點） ---- */
+/* ---- 台鐵：從指定時間往後查詢（用當天完整時刻表，非即時誤點） ---- */
+const TRA_FORWARD_LIMIT = 15; // 只列出往後最近 15 班，避免清單太長
+
 async function openTraRangePicker(){
   const cfg = TRA_DIRECTIONS[getMode()];
-  document.getElementById('sheetTitle').textContent = cfg.label + '｜自訂時間區段';
+  document.getElementById('sheetTitle').textContent = cfg.label + '｜指定時間往後查詢';
   const hint = document.getElementById('sheetHint');
   hint.style.display = 'block';
-  hint.textContent = '這裡查的是當天排定時刻表，僅供規劃參考，不包含即時誤點資訊。';
+  hint.textContent = `輸入一個時間，列出這之後最近 ${TRA_FORWARD_LIMIT} 班車。這裡查的是當天排定時刻表，僅供規劃參考，不包含即時誤點資訊。`;
   const body = document.getElementById('sheetBody');
-  const now = new Date();
-  const nowHHMM = now.toTimeString().slice(0,5);
-  const endHHMM = new Date(now.getTime() + 2*3600*1000).toTimeString().slice(0,5);
+  const nowHHMM = new Date().toTimeString().slice(0,5);
   body.innerHTML = `
     <div class="timeRow">
-      <input type="time" id="rangeStart" value="${nowHHMM}">
-      <span>至</span>
-      <input type="time" id="rangeEnd" value="${endHHMM}">
+      <input type="time" id="rangeFrom" value="${nowHHMM}" style="flex:1;">
     </div>
-    <button class="fullBtn" id="rangeSearchBtn">查詢這段時間的班次</button>
+    <button class="fullBtn" id="rangeSearchBtn">查詢這個時間之後的班次</button>
     <div id="rangeResults" style="margin-top:14px;"></div>
   `;
   overlay.classList.add('show');
-  const doRangeSearch = async ()=>{
-    const start = document.getElementById('rangeStart').value;
-    const end = document.getElementById('rangeEnd').value;
+  const doForwardSearch = async ()=>{
+    const from = document.getElementById('rangeFrom').value;
     const results = document.getElementById('rangeResults');
-    if(!start || !end){ results.innerHTML = '<div class="muted">請選擇時間區段</div>'; return; }
+    if(!from){ results.innerHTML = '<div class="muted">請選擇時間</div>'; return; }
     results.innerHTML = '<div class="muted">查詢中…</div>';
     try{
       const today = new Date().toISOString().slice(0,10);
       const data = await tdxGet(`/v2/Rail/TRA/DailyTimetable/OD/${cfg.fromStation}/to/${cfg.toStation}/${today}`);
       const list = (data||[])
-        .filter(t=>{
-          const dep = t.OriginStopTime.DepartureTime.slice(0,5);
-          return start <= end ? (dep >= start && dep <= end) : (dep >= start || dep <= end);
-        })
-        .sort((a,b)=> a.OriginStopTime.DepartureTime.localeCompare(b.OriginStopTime.DepartureTime));
-      if(!list.length){ results.innerHTML = '<div class="muted">這段時間沒有查到班次</div>'; return; }
+        .filter(t=> t.OriginStopTime.DepartureTime.slice(0,5) >= from)
+        .sort((a,b)=> a.OriginStopTime.DepartureTime.localeCompare(b.OriginStopTime.DepartureTime))
+        .slice(0, TRA_FORWARD_LIMIT);
+      if(!list.length){ results.innerHTML = '<div class="muted">這個時間之後沒有查到班次了</div>'; return; }
       results.innerHTML = list.map(t=>{
         const info = t.DailyTrainInfo;
         return `<div class="stopitem">
@@ -520,10 +552,10 @@ async function openTraRangePicker(){
         </div>`;
       }).join('');
     }catch(e){
-      results.innerHTML = errBox(e.message, doRangeSearch);
+      results.innerHTML = errBox(e.message, doForwardSearch);
     }
   };
-  document.getElementById('rangeSearchBtn').onclick = doRangeSearch;
+  document.getElementById('rangeSearchBtn').onclick = doForwardSearch;
 }
 
 async function openTrainDetail(trainNo){
@@ -591,6 +623,7 @@ function renderKrtcSkeleton(){
   });
   document.getElementById('krtcHead').onclick = ()=> openKrtcDetail(selectedKrtcStation);
   renderKrtcTabsUI();
+  renderKrtcFromCache(); // 第 1 層：有快取就先畫出來，不用等這次的網路請求
 }
 
 function renderKrtcTabsUI(){
@@ -634,6 +667,7 @@ async function loadKRTC(){
     const filter = KRTC_ALL_STATION_IDS.map(id=>`StationID eq '${id}'`).join(' or ');
     const data = await tdxGet(`/v2/Rail/Metro/LiveBoard/KRTC?$filter=${encodeURIComponent(filter)}`);
     lastKrtcData = data || [];
+    saveCache('krtc', lastKrtcData);
     renderKrtcFromCache();
   }catch(e){
     if(lastKrtcData){
@@ -728,6 +762,17 @@ function renderBusSkeleton(){
     };
   });
   document.getElementById('addRouteCard').onclick = openAddRoute;
+
+  // 第 1 層：有快取到站資料的路線先畫出來，不用等這次的網路請求。
+  const mode = getMode();
+  routes.forEach(r=>{
+    const picked = getPickedStop(r.key);
+    if(!picked) return;
+    const cached = lastBusStopData[r.key+'_'+mode];
+    if(cached !== undefined){
+      renderBusEtaBox(document.getElementById('bus-eta-'+r.key), cached);
+    }
+  });
 }
 
 function renderBusEtaBox(box, stop, stale, errMsg){
@@ -745,6 +790,7 @@ function renderBusEtaBox(box, stop, stale, errMsg){
 
 // key：routeKey + 模式 -> 上一次成功抓到的到站物件，失敗時當備援顯示。
 let lastBusStopData = {};
+function persistBusCache(){ saveCache('busEta', lastBusStopData); }
 
 async function loadBusEta(routeKey){
   const mode = getMode();
@@ -758,8 +804,11 @@ async function loadBusEta(routeKey){
     const data = await tdxGet(`/v2/Bus/EstimatedTimeOfArrival/City/Kaohsiung?$filter=${filter}`);
     const stop = (data||[]).find(s=> s.StopUID === picked.StopUID);
     lastBusStopData[routeKey+'_'+mode] = stop || null;
-    renderBusEtaBox(box, stop);
+    persistBusCache();
+    // 回應回來時模式可能已經切換了，慢半拍的結果只存快取，畫面交給目前的模式處理。
+    if(mode === getMode()) renderBusEtaBox(box, stop);
   }catch(e){
+    if(mode !== getMode()) return;
     const cached = lastBusStopData[routeKey+'_'+mode];
     if(cached){ renderBusEtaBox(box, cached, true, e.message); }
     else { box.innerHTML = errBox(e.message, ()=>loadBusEta(routeKey)); }
@@ -781,12 +830,15 @@ async function loadAllBusEta(){
   try{
     const filter = withStop.map(x=>`StopUID eq '${x.stop.StopUID}'`).join(' or ');
     const data = await tdxGet(`/v2/Bus/EstimatedTimeOfArrival/City/Kaohsiung?$filter=${encodeURIComponent(filter)}`);
+    const stillCurrent = mode === getMode();
     withStop.forEach(({route, stop, box})=>{
       const s = (data||[]).find(x=>x.StopUID===stop.StopUID);
       lastBusStopData[route.key+'_'+mode] = s || null;
-      renderBusEtaBox(box, s);
+      if(stillCurrent) renderBusEtaBox(box, s);
     });
+    persistBusCache();
   }catch(e){
+    if(mode !== getMode()) return;
     withStop.forEach(({route, box})=>{
       const cached = lastBusStopData[route.key+'_'+mode];
       if(cached){ renderBusEtaBox(box, cached, true, e.message); }
@@ -850,6 +902,7 @@ function renderYoubikeCard(stale, errMsg){
         wrap.innerHTML = '<div class="card"><div class="muted">無法取得定位，請確認瀏覽器的定位權限已開啟</div></div>';
         return;
       }
+      saveCache('youbikeGeo', userGeo);
       await loadYouBike();
     };
     return;
@@ -892,6 +945,7 @@ async function loadYouBike(){
     await getYoubikeStations();
     const data = await tdxGet(`/v2/Bike/Availability/City/Kaohsiung?$top=1200`);
     lastYoubikeAvail = data || [];
+    saveCache('youbikeAvail', lastYoubikeAvail);
     renderYoubikeCard();
   }catch(e){
     if(lastYoubikeAvail){ renderYoubikeCard(true, e.message); }
@@ -1059,14 +1113,27 @@ document.querySelectorAll('.modeBtn').forEach(btn=>{
   btn.onclick = ()=> setMode(btn.dataset.mode);
 });
 
+// 開頁的第一件事：把 localStorage 裡「上一次成功抓到的資料」全部讀進記憶體，
+// 這樣底下的 renderAll() 就能立刻畫出東西，不用乾等第一次的網路請求跑完。
+function hydrateFromCache(){
+  lastTraTrainsByMode.go = loadCache('tra_go') || null;
+  lastTraTrainsByMode.back = loadCache('tra_back') || null;
+  lastKrtcData = loadCache('krtc') || null;
+  lastBusStopData = loadCache('busEta') || {};
+  lastYoubikeAvail = loadCache('youbikeAvail') || null;
+  userGeo = loadCache('youbikeGeo', 30*60*1000) || null; // 定位快取只留 30 分鐘，太久沒重新定位怕位置不準
+}
+
+hydrateFromCache();
 injectIcons();
 renderModeUI();
+renderTraFromCache();
 renderAll();
 refreshAll();
 
-// 每 10 秒觸發一次，但畫面不在前景（螢幕鎖定、切到別的 App）時跳過，
+// 每 20 秒觸發一次，但畫面不在前景（螢幕鎖定、切到別的 App）時跳過，
 // 不浪費 TDX 的每月查詢額度；回到前景會立刻補一次最新資料。
-const AUTO_REFRESH_MS = 10000;
+const AUTO_REFRESH_MS = 20000;
 setInterval(()=>{
   if(document.visibilityState === 'visible') refreshAll();
 }, AUTO_REFRESH_MS);
