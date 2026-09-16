@@ -6,134 +6,160 @@
 <meta name="apple-mobile-web-app-title" content="天繃開橘">
 <link rel="apple-touch-icon" href="icon.png">
 <meta name="theme-color" content="#0f172a" media="(prefers-color-scheme: dark)">
-<meta name="theme-color" content="#f8fafc" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#faf9f7" media="(prefers-color-scheme: light)">
 <title>天繃開橘</title>
 <style>
   :root{
-    --bg:#f8fafc; --card:#ffffff; --text:#0f172a; --sub:#64748b;
-    --border:#e2e8f0; --accent:#2563eb; --accent2:#0891b2;
-    --good:#16a34a; --warn:#d97706; --bad:#dc2626;
-    --shadow:0 1px 3px rgba(0,0,0,.06), 0 1px 2px rgba(0,0,0,.04);
+    --bg:#faf9f7; --card:#ffffff; --text:#1c1a17; --sub:#8a8378;
+    --border:#eae6df; --accent:#c9622c; --accent-soft:#f2e2d6;
+    --good:#3a8f5c; --warn:#b8791f; --bad:#c14444;
+    --radius:16px; --radius-lg:20px; --radius-sm:10px;
+    --shadow:0 1px 2px rgba(28,26,23,.04), 0 1px 8px rgba(28,26,23,.04);
   }
   @media (prefers-color-scheme: dark){
     :root{
-      --bg:#0b1220; --card:#141d2e; --text:#e5eaf2; --sub:#93a1b7;
-      --border:#243349; --accent:#5b9dff; --accent2:#33c3dc;
-      --good:#34d97a; --warn:#f5b942; --bad:#f87171;
-      --shadow:0 1px 3px rgba(0,0,0,.4);
+      --bg:#141210; --card:#1d1a17; --text:#f2ede6; --sub:#95897c;
+      --border:#2c2823; --accent:#e2895a; --accent-soft:#3a2a1e;
+      --good:#5fbf87; --warn:#e0a64a; --bad:#ef7272;
+      --shadow:0 1px 8px rgba(0,0,0,.35);
     }
   }
   *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
   html,body{margin:0; padding:0; background:var(--bg); color:var(--text);
-    font-family:-apple-system,BlinkMacSystemFont,"PingFang TC","Helvetica Neue",sans-serif;}
+    font-family:-apple-system,BlinkMacSystemFont,"PingFang TC","Helvetica Neue",sans-serif;
+    -webkit-font-smoothing:antialiased;}
   body{
-    padding: max(14px, env(safe-area-inset-top)) 14px calc(24px + env(safe-area-inset-bottom));
+    padding: max(16px, env(safe-area-inset-top)) 16px calc(28px + env(safe-area-inset-bottom));
     min-height:100vh;
+    max-width:560px; margin:0 auto;
   }
-  .topbar{display:flex; align-items:center; justify-content:space-between; margin-bottom:14px;}
-  .topbar h1{font-size:19px; margin:0; font-weight:700; letter-spacing:.2px;}
-  .topbar .sub{font-size:12px; color:var(--sub); margin-top:2px;}
+  button, input{ font-family:inherit; }
+
+  /* ---- header ---- */
+  .topbar{display:flex; align-items:flex-start; justify-content:space-between; margin-bottom:14px;}
+  .topbar h1{font-size:20px; margin:0; font-weight:800; letter-spacing:.2px;}
+  .topbar .sub{font-size:12.5px; color:var(--sub); margin-top:3px;}
   .iconbtn{
     width:38px; height:38px; border-radius:12px; border:1px solid var(--border);
     background:var(--card); display:flex; align-items:center; justify-content:center;
-    font-size:17px; color:var(--sub); flex-shrink:0;
+    font-size:16px; color:var(--sub); flex-shrink:0;
   }
   .iconbtn:active{opacity:.6;}
-  .btnrow{display:flex; gap:8px;}
+  .iconbtn.spin{animation:spin .7s linear;}
+  @keyframes spin{ from{transform:rotate(0)} to{transform:rotate(360deg)} }
 
+  /* ---- mode switch ---- */
+  .modeSwitch{
+    display:flex; background:var(--card); border:1px solid var(--border); border-radius:14px;
+    padding:4px; margin-bottom:6px; gap:4px;
+  }
+  .modeBtn{
+    flex:1; border:none; background:transparent; color:var(--sub); font-weight:700;
+    font-size:14px; padding:10px 8px; border-radius:10px; transition:background .15s, color .15s;
+  }
+  .modeBtn.active{ background:var(--accent); color:#fff; }
+  .updatedRow{ text-align:center; font-size:11.5px; color:var(--sub); margin:8px 0 16px; }
+  .updatedRow button{ background:none; border:none; color:var(--accent); font-weight:700; font-size:11.5px; padding:2px 6px; }
+
+  /* ---- section ---- */
+  .section-title{font-size:12.5px; font-weight:800; color:var(--sub); margin:20px 2px 8px; letter-spacing:.4px; text-transform:uppercase;}
+
+  /* ---- hero (TRA) ---- */
   .hero{
-    background:linear-gradient(135deg, var(--accent), var(--accent2));
-    border-radius:20px; padding:18px; color:#fff; margin-bottom:16px;
-    box-shadow:var(--shadow); position:relative; overflow:hidden;
+    background:var(--card); border:1px solid var(--border); border-radius:var(--radius-lg);
+    padding:18px; margin-bottom:8px; box-shadow:var(--shadow); position:relative;
+    border-left:4px solid var(--accent);
   }
-  .hero-top{display:flex; justify-content:space-between; align-items:flex-start;}
-  .hero-label{font-size:12px; opacity:.85; font-weight:600; letter-spacing:.5px;}
-  .hero-route{font-size:17px; font-weight:700; margin-top:2px;}
-  .swapbtn{
-    background:rgba(255,255,255,.22); border:none; color:#fff; border-radius:10px;
-    width:34px; height:34px; font-size:15px; display:flex; align-items:center; justify-content:center;
-  }
-  .swapbtn:active{background:rgba(255,255,255,.35);}
+  .hero-label{font-size:11.5px; font-weight:800; color:var(--accent); letter-spacing:.5px; text-transform:uppercase;}
+  .hero-route{font-size:19px; font-weight:800; margin-top:3px;}
   .hero-trains{margin-top:14px; display:flex; flex-direction:column; gap:8px;}
   .hero-train{
     display:flex; justify-content:space-between; align-items:center;
-    background:rgba(255,255,255,.14); border-radius:12px; padding:10px 12px;
+    background:var(--bg); border:1px solid var(--border); border-radius:var(--radius-sm); padding:11px 13px;
+    cursor:pointer;
   }
-  .hero-train .l{font-size:13px; opacity:.95;}
-  .hero-train .l small{display:block; font-size:11px; opacity:.75; margin-top:1px;}
-  .hero-train .r{font-size:20px; font-weight:800; text-align:right;}
-  .hero-train .r small{display:block; font-size:11px; font-weight:600; opacity:.85;}
-  .hero-empty{margin-top:14px; font-size:13px; opacity:.85;}
+  .hero-train:active{opacity:.65;}
+  .hero-train .l{font-size:13.5px; font-weight:600;}
+  .hero-train .l small{display:block; font-size:11.5px; color:var(--sub); font-weight:500; margin-top:2px;}
+  .hero-train .r{font-size:19px; font-weight:800; text-align:right; font-variant-numeric:tabular-nums; color:var(--accent);}
+  .hero-empty{margin-top:14px; font-size:13px; color:var(--sub);}
 
-  .section-title{font-size:13px; font-weight:700; color:var(--sub); margin:18px 2px 8px; letter-spacing:.3px;}
-
+  /* ---- generic card ---- */
   .card{
-    background:var(--card); border:1px solid var(--border); border-radius:16px;
+    background:var(--card); border:1px solid var(--border); border-radius:var(--radius);
     padding:14px; margin-bottom:10px; box-shadow:var(--shadow);
   }
   .card-head{display:flex; justify-content:space-between; align-items:center; gap:8px;}
-  .card-title{display:flex; align-items:center; gap:8px; min-width:0;}
+  .card-title{display:flex; align-items:center; gap:10px; min-width:0;}
   .tag{
-    font-size:11px; font-weight:800; color:#fff; border-radius:7px; padding:3px 7px;
+    font-size:11px; font-weight:800; color:#fff; border-radius:7px; padding:4px 8px;
     flex-shrink:0;
   }
   .card-name{font-size:14.5px; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
-  .card-sub{font-size:12px; color:var(--sub); margin-top:2px;}
-  .gearbtn{background:none; border:none; color:var(--sub); font-size:15px; padding:4px; flex-shrink:0;}
+  .card-sub{font-size:12px; color:var(--sub); margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+  .gearbtn{background:none; border:none; color:var(--sub); font-size:15px; padding:6px; flex-shrink:0; opacity:.75;}
+  .gearbtn:active{opacity:1;}
   .card.clickable{cursor:pointer;}
-  .card.clickable:active{opacity:.7;}
+  .card.clickable:active{opacity:.75;}
   .chev{color:var(--sub); font-size:18px; flex-shrink:0;}
-  .card.addroute{cursor:pointer; text-align:center; border-style:dashed;}
+  .card.addroute{cursor:pointer; text-align:center; border-style:dashed; color:var(--accent); font-weight:700; font-size:14px;}
   .card.addroute:active{opacity:.6;}
-  .hero-train{cursor:pointer;}
-  .hero-train:active{opacity:.75;}
 
-  .etalist{display:flex; gap:8px; margin-top:10px; flex-wrap:wrap;}
+  .etalist{display:flex; gap:8px; margin-top:11px; flex-wrap:wrap;}
   .eta{
-    background:var(--bg); border:1px solid var(--border); border-radius:10px;
-    padding:8px 10px; min-width:64px; text-align:center;
+    background:var(--bg); border:1px solid var(--border); border-radius:var(--radius-sm);
+    padding:9px 12px; min-width:64px; text-align:center;
   }
-  .eta .min{font-size:17px; font-weight:800; color:var(--accent);}
+  .eta .min{font-size:17px; font-weight:800; color:var(--accent); font-variant-numeric:tabular-nums;}
   .eta .min.soon{color:var(--good);}
   .eta .min.late{color:var(--sub);}
-  .eta .cap{font-size:10px; color:var(--sub); margin-top:1px;}
+  .eta .cap{font-size:10.5px; color:var(--sub); margin-top:2px;}
 
-  .muted{color:var(--sub); font-size:13px; padding:6px 0;}
-  .err{color:var(--bad); font-size:12.5px; padding:6px 0;}
+  .muted{color:var(--sub); font-size:13px; padding:8px 2px;}
+  .err{color:var(--bad); font-size:12.5px; padding:8px 2px; display:flex; align-items:center; gap:8px; flex-wrap:wrap;}
+  .err button{background:var(--bad); color:#fff; border:none; border-radius:8px; font-size:11.5px; font-weight:700; padding:5px 10px;}
+  .skeleton{height:44px; border-radius:var(--radius-sm); background:linear-gradient(90deg, var(--bg) 25%, var(--border) 37%, var(--bg) 63%); background-size:400% 100%; animation:shimmer 1.4s ease infinite;}
+  @keyframes shimmer{ 0%{background-position:100% 0} 100%{background-position:0 0} }
 
-  .footer{text-align:center; color:var(--sub); font-size:11.5px; margin-top:18px;}
-  .footer button{
-    background:none; border:none; color:var(--accent); font-size:12px; font-weight:600;
-    padding:6px 10px;
-  }
+  .footer{text-align:center; color:var(--sub); font-size:11.5px; margin-top:22px; line-height:1.7;}
 
-  /* modal */
+  /* ---- modal ---- */
   .overlay{
-    position:fixed; inset:0; background:rgba(0,0,0,.45); display:none;
+    position:fixed; inset:0; background:rgba(20,18,16,.5); display:none;
     align-items:flex-end; z-index:50;
   }
   .overlay.show{display:flex;}
   .sheet{
-    background:var(--card); width:100%; max-height:82vh; border-radius:20px 20px 0 0;
-    padding:16px 16px calc(16px + env(safe-area-inset-bottom)); overflow-y:auto;
-    animation:up .18s ease-out;
+    background:var(--card); width:100%; max-height:82vh; border-radius:22px 22px 0 0;
+    padding:16px 18px calc(18px + env(safe-area-inset-bottom)); overflow-y:auto;
+    animation:up .2s ease-out; max-width:560px; margin:0 auto;
   }
-  @keyframes up{from{transform:translateY(16px); opacity:.5} to{transform:translateY(0); opacity:1}}
-  .sheet h2{font-size:16px; margin:0 0 4px;}
-  .sheet p.hint{font-size:12px; color:var(--sub); margin:0 0 12px;}
+  @keyframes up{from{transform:translateY(20px); opacity:.4} to{transform:translateY(0); opacity:1}}
+  .sheet h2{font-size:16.5px; margin:0 0 4px; font-weight:800;}
+  .sheet p.hint{font-size:12.5px; color:var(--sub); margin:0 0 12px;}
   .stopitem{
     display:flex; justify-content:space-between; align-items:center;
-    padding:11px 4px; border-bottom:1px solid var(--border); font-size:14px;
+    padding:12px 2px; border-bottom:1px solid var(--border); font-size:14px;
   }
   .stopitem .n{font-weight:600;}
-  .stopitem .d{font-size:11px; color:var(--sub);}
+  .stopitem .d{font-size:11.5px; color:var(--sub); margin-top:1px;}
   .stopitem button{
-    background:var(--accent); color:#fff; border:none; border-radius:8px;
-    font-size:12px; padding:6px 12px; font-weight:700; flex-shrink:0;
+    background:var(--accent); color:#fff; border:none; border-radius:9px;
+    font-size:12px; padding:7px 13px; font-weight:700; flex-shrink:0;
   }
+  .stopitem button:disabled{ background:var(--border); color:var(--sub); }
   .stopitem.picked button{background:var(--good);}
-  .closebar{display:flex; justify-content:flex-end; margin-bottom:6px;}
-  .closebar button{background:none; border:none; color:var(--sub); font-size:14px; padding:6px;}
+  .closebar{display:flex; justify-content:flex-end; margin-bottom:4px;}
+  .closebar button{background:none; border:none; color:var(--sub); font-size:14px; padding:8px;}
+  .searchRow{ display:flex; gap:8px; margin-bottom:12px; }
+  .searchRow input{
+    flex:1; min-width:0; padding:11px 13px; border-radius:12px; border:1px solid var(--border);
+    background:var(--bg); color:var(--text); font-size:14px;
+  }
+  .searchRow button{
+    background:var(--accent); color:#fff; border:none; border-radius:12px; padding:0 18px;
+    font-weight:700; flex-shrink:0; font-size:14px;
+  }
 </style>
 </head>
 <body>
@@ -141,24 +167,23 @@
 <div class="topbar">
   <div>
     <h1>天繃開橘</h1>
-    <div class="sub" id="updatedAt">載入中…</div>
+    <div class="sub" id="modeHint">載入中…</div>
   </div>
-  <div class="btnrow">
-    <button class="iconbtn" id="refreshBtn" title="重新整理">⟳</button>
-  </div>
+  <button class="iconbtn" id="refreshBtn" title="重新整理">⟳</button>
 </div>
 
-<!-- Hero: TRA -->
+<div class="modeSwitch" id="modeSwitch">
+  <button class="modeBtn" data-mode="go">🌅 去程</button>
+  <button class="modeBtn" data-mode="back">🌆 回程</button>
+</div>
+<div class="updatedRow" id="updatedRow">載入中…</div>
+
+<!-- TRA -->
 <div class="hero">
-  <div class="hero-top">
-    <div>
-      <div class="hero-label">台鐵 · 重點路線</div>
-      <div class="hero-route" id="traRouteLabel">高雄 → 屏東</div>
-    </div>
-    <button class="swapbtn" id="traSwap">⇄</button>
-  </div>
+  <div class="hero-label">台鐵</div>
+  <div class="hero-route" id="traRouteLabel">—</div>
   <div class="hero-trains" id="traTrains">
-    <div class="hero-empty">載入中…</div>
+    <div class="skeleton"></div>
   </div>
 </div>
 
@@ -169,16 +194,15 @@
 <div id="busCards"></div>
 
 <div class="footer">
-  資料來源：TDX 運輸資料流通服務平臺 · 每 45 秒自動更新<br>
-  <button id="settingsBtn">設定常用公車站牌</button>
+  資料來源：TDX 運輸資料流通服務平臺<br>每 45 秒自動更新 · 點卡片看更多細節
 </div>
 
-<!-- Stop picker modal -->
+<!-- Shared bottom sheet modal -->
 <div class="overlay" id="overlay">
   <div class="sheet">
     <div class="closebar"><button id="closeSheet">關閉 ✕</button></div>
-    <h2 id="sheetTitle">選擇站牌</h2>
-    <p class="hint" id="sheetHint">選你平常上車的站牌，之後首頁只顯示這一站的到站時間。</p>
+    <h2 id="sheetTitle">詳細資訊</h2>
+    <p class="hint" id="sheetHint" style="display:none;"></p>
     <div id="sheetBody"><div class="muted">載入中…</div></div>
   </div>
 </div>
@@ -193,22 +217,23 @@ const TDX_API = 'https://tdx.transportdata.tw/api/basic';
 const TRA_STATIONS = { KAOHSIUNG: '4400', PINGTUNG: '5000' };
 // Direction 1 = 南下(高雄→屏東方向), Direction 0 = 北上(屏東→高雄方向)
 const TRA_DIRECTIONS = {
-  toPingtung: { fromStation: TRA_STATIONS.KAOHSIUNG, direction: 1, label: '高雄 → 屏東' },
-  toKaohsiung: { fromStation: TRA_STATIONS.PINGTUNG, direction: 0, label: '屏東 → 高雄' }
+  go:   { fromStation: TRA_STATIONS.KAOHSIUNG, direction: 1, label: '高雄 → 屏東' },
+  back: { fromStation: TRA_STATIONS.PINGTUNG,  direction: 0, label: '屏東 → 高雄' }
 };
 
-const KRTC_LEGS = [
-  { key:'hamasen', name:'哈瑪星', stationId:'O1', line:'橘線', lineColor:'#f97316', note:'橘線起點站，於美麗島可轉紅線' },
-  { key:'kstation', name:'高雄車站', stationId:'R11', line:'紅線', lineColor:'#dc2626', note:'紅線中途站，可往小港或往岡山方向' }
-];
+const KRTC_BY_MODE = {
+  go:   { key:'kstation', name:'高雄車站', stationId:'R11', line:'紅線', lineColor:'#c1443f', headsign:'小港',   note:'紅線，於美麗島可轉橘線往哈瑪星' },
+  back: { key:'hamasen',  name:'哈瑪星',   stationId:'O1',  line:'橘線', lineColor:'#d98a2b', headsign:'大寮',   note:'橘線，於美麗島可轉紅線往高雄車站' }
+};
+const KRTC_ALL_LEGS = [KRTC_BY_MODE.go, KRTC_BY_MODE.back];
 
 const DEFAULT_BUS_ROUTES = [
-  { key:'o1',  name:'橘1',      tag:'橘1',   color:'#f97316' },
-  { key:'o1e', name:'橘1延',    tag:'橘1延', color:'#fb923c' },
-  { key:'r52', name:'紅52',     tag:'紅52',  color:'#dc2626' },
-  { key:'w50', name:'50五福幹線', tag:'五福幹線', color:'#7c3aed' }
+  { key:'o1',  name:'橘1',      tag:'橘1',   color:'#d98a2b' },
+  { key:'o1e', name:'橘1延',    tag:'橘1延', color:'#e0a64a' },
+  { key:'r52', name:'紅52',     tag:'紅52',  color:'#c1443f' },
+  { key:'w50', name:'50五福幹線', tag:'五福幹線', color:'#7c6fae' }
 ];
-const ROUTE_COLORS = ['#f97316','#dc2626','#7c3aed','#0891b2','#16a34a','#d97706','#db2777','#2563eb'];
+const ROUTE_COLORS = ['#d98a2b','#c1443f','#7c6fae','#3a8f9e','#3a8f5c','#b8791f','#b85c86','#4472c4'];
 
 function getBusRoutes(){
   const saved = JSON.parse(localStorage.getItem('busRoutes') || 'null');
@@ -229,7 +254,32 @@ function addBusRoute(name){
 }
 function removeBusRoute(key){
   saveBusRoutes(getBusRoutes().filter(r=>r.key!==key));
-  localStorage.removeItem('busStop_'+key);
+  localStorage.removeItem('busStop_'+key+'_go');
+  localStorage.removeItem('busStop_'+key+'_back');
+}
+
+/* ====================== 去程／回程模式 ====================== */
+function autoDetectMode(){
+  const h = new Date().getHours();
+  return h < 13 ? 'go' : 'back';
+}
+let currentMode = autoDetectMode();
+function getMode(){ return currentMode; }
+function setMode(m){
+  currentMode = m;
+  renderModeUI();
+  renderAll();
+  refreshAll();
+}
+function renderModeUI(){
+  document.querySelectorAll('.modeBtn').forEach(btn=>{
+    btn.classList.toggle('active', btn.dataset.mode === currentMode);
+  });
+  const hints = {
+    go:   '🌅 出發囉，往屏東 / 哈瑪星方向',
+    back: '🌆 收工，往高雄方向回家'
+  };
+  document.getElementById('modeHint').textContent = hints[currentMode];
 }
 
 /* ====================== Token ====================== */
@@ -252,12 +302,17 @@ async function getToken(){
   return data.token;
 }
 
-async function tdxGet(path){
+function sleep(ms){ return new Promise(r=>setTimeout(r, ms)); }
+
+async function tdxGet(path, retry){
   const token = await getToken();
   const res = await fetch(TDX_API + path + (path.includes('?')?'&':'?') + '$format=JSON', {
     headers:{ Authorization:'Bearer '+token, Accept:'application/json' }
   });
-  if(res.status === 429) throw new Error('查詢太頻繁，稍後再試');
+  if(res.status === 429){
+    if(!retry){ await sleep(1500); return tdxGet(path, true); }
+    throw new Error('查詢太頻繁，稍後再試');
+  }
   if(!res.ok) throw new Error('資料取得失敗 ('+res.status+')');
   return res.json();
 }
@@ -268,17 +323,23 @@ function minutesFrom(dateStr){
   return Math.max(0, Math.round(diffMs/60000));
 }
 function fmtMin(m){ return m<=0 ? '進站' : m+'分'; }
-function etaClass(m){ return m<=3 ? 'soon' : (m>=15 ? 'late' : ''); }
+function etaClass(m){ return m<=2 ? 'soon' : (m>=15 ? 'late' : ''); }
 function nowStr(){
-  return new Date().toLocaleTimeString('zh-TW',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  return new Date().toLocaleTimeString('zh-TW',{hour:'2-digit',minute:'2-digit'});
+}
+function errBox(msg, retryFn){
+  const id = 'retry_' + Math.random().toString(36).slice(2,8);
+  setTimeout(()=>{
+    const b = document.getElementById(id);
+    if(b) b.onclick = retryFn;
+  }, 0);
+  return `<div class="err">⚠️ ${msg} <button id="${id}">重試</button></div>`;
 }
 
 /* ====================== 台鐵 ====================== */
-let traDirKey = 'toPingtung';
-
 async function loadTRA(){
   const el = document.getElementById('traTrains');
-  const cfg = TRA_DIRECTIONS[traDirKey];
+  const cfg = TRA_DIRECTIONS[getMode()];
   document.getElementById('traRouteLabel').textContent = cfg.label;
   try{
     const data = await tdxGet(`/v2/Rail/TRA/LiveBoard/Station/${cfg.fromStation}`);
@@ -294,7 +355,7 @@ async function loadTRA(){
       const delay = t.DelayTime>0 ? `誤點 ${t.DelayTime} 分` : '準點';
       return `<div class="hero-train" data-trainno="${t.TrainNo}">
         <div class="l">${t.TrainTypeName.Zh_tw} ${t.TrainNo}
-          <small>往${t.EndingStationName.Zh_tw} · ${t.ScheduledDepartureTime.slice(0,5)} · ${delay} · 點看詳細時刻表</small>
+          <small>往${t.EndingStationName.Zh_tw} · ${delay} · 點看時刻表</small>
         </div>
         <div class="r">${t.ScheduledDepartureTime.slice(0,5)}</div>
       </div>`;
@@ -303,7 +364,7 @@ async function loadTRA(){
       row.onclick = ()=> openTrainDetail(row.dataset.trainno);
     });
   }catch(e){
-    el.innerHTML = `<div class="hero-empty">⚠️ ${e.message}</div>`;
+    el.innerHTML = errBox(e.message, loadTRA);
   }
 }
 
@@ -329,20 +390,19 @@ async function openTrainDetail(trainNo){
     }).join('');
     body.innerHTML = html;
   }catch(e){
-    body.innerHTML = `<div class="err">⚠️ ${e.message}</div>`;
+    body.innerHTML = errBox(e.message, ()=>openTrainDetail(trainNo));
   }
 }
 
-document.getElementById('traSwap').onclick = ()=>{
-  traDirKey = traDirKey==='toPingtung' ? 'toKaohsiung' : 'toPingtung';
-  loadTRA();
-};
-
 /* ====================== 高雄捷運 ====================== */
+// 注意：KRTC LiveBoard 的 EstimateTime 單位是「分鐘」，不是秒。
+function krtcMinuteLabel(m){ return m<=0 ? '進站' : m+'分'; }
+
 function renderKrtcSkeleton(){
   const wrap = document.getElementById('krtcCards');
-  wrap.innerHTML = KRTC_LEGS.map(leg=>`
-    <div class="card clickable" id="krtc-${leg.key}" data-leg="${leg.key}">
+  const leg = KRTC_BY_MODE[getMode()];
+  wrap.innerHTML = `
+    <div class="card clickable" id="krtc-card" data-station="${leg.stationId}">
       <div class="card-head">
         <div class="card-title">
           <span class="tag" style="background:${leg.lineColor}">${leg.line}</span>
@@ -353,43 +413,36 @@ function renderKrtcSkeleton(){
         </div>
         <span class="chev">›</span>
       </div>
-      <div class="etalist" id="krtc-eta-${leg.key}"><div class="muted">載入中…</div></div>
+      <div class="etalist" id="krtc-eta"><div class="skeleton"></div></div>
     </div>
-  `).join('');
-  wrap.querySelectorAll('.card[data-leg]').forEach(card=>{
-    card.onclick = ()=> openKrtcDetail(card.dataset.leg);
-  });
+  `;
+  document.getElementById('krtc-card').onclick = ()=> openKrtcDetail(leg.stationId);
 }
 
 async function loadKRTC(){
+  const leg = KRTC_BY_MODE[getMode()];
+  const box = document.getElementById('krtc-eta');
+  if(!box) return;
   try{
-    const ids = KRTC_LEGS.map(l=>l.stationId);
-    const filter = ids.map(id=>`StationID eq '${id}'`).join(' or ');
-    const data = await tdxGet(`/v2/Rail/Metro/LiveBoard/KRTC?$filter=${encodeURIComponent(filter)}`);
-    KRTC_LEGS.forEach(leg=>{
-      const box = document.getElementById('krtc-eta-'+leg.key);
-      const trains = (data||[]).filter(t=> t.StationID===leg.stationId);
-      // 每個方向（TripHeadSign）只取最快的一班
-      const byHead = {};
-      trains.forEach(t=>{
-        if(!byHead[t.TripHeadSign] || t.EstimateTime < byHead[t.TripHeadSign].EstimateTime){
-          byHead[t.TripHeadSign] = t;
-        }
-      });
-      const list = Object.values(byHead).sort((a,b)=> a.EstimateTime - b.EstimateTime);
-      if(!list.length){ box.innerHTML = '<div class="muted">目前沒有班次資訊</div>'; return; }
-      box.innerHTML = list.map(t=>{
-        const m = Math.round(t.EstimateTime/60);
-        return `<div class="eta">
-          <div class="min ${etaClass(m)}">${t.EstimateTime<60? '進站' : m+'分'}</div>
-          <div class="cap">${t.TripHeadSign}</div>
-        </div>`;
-      }).join('');
+    const data = await tdxGet(`/v2/Rail/Metro/LiveBoard/KRTC?$filter=${encodeURIComponent(`StationID eq '${leg.stationId}'`)}`);
+    const trains = (data||[]).filter(t=> t.StationID===leg.stationId);
+    const byHead = {};
+    trains.forEach(t=>{
+      if(!(t.TripHeadSign in byHead) || t.EstimateTime < byHead[t.TripHeadSign].EstimateTime){
+        byHead[t.TripHeadSign] = t;
+      }
     });
+    const list = Object.values(byHead).sort((a,b)=> a.EstimateTime - b.EstimateTime);
+    if(!list.length){ box.innerHTML = '<div class="muted">目前沒有班次資訊</div>'; return; }
+    box.innerHTML = list.map(t=>{
+      const m = t.EstimateTime; // 已經是分鐘
+      return `<div class="eta">
+        <div class="min ${etaClass(m)}">${krtcMinuteLabel(m)}</div>
+        <div class="cap">${t.TripHeadSign}</div>
+      </div>`;
+    }).join('');
   }catch(e){
-    KRTC_LEGS.forEach(leg=>{
-      document.getElementById('krtc-eta-'+leg.key).innerHTML = `<div class="err">⚠️ ${e.message}</div>`;
-    });
+    box.innerHTML = errBox(e.message, loadKRTC);
   }
 }
 
@@ -405,17 +458,17 @@ async function getKrtcStationInfo(stationId){
   return info;
 }
 
-async function openKrtcDetail(legKey){
-  const leg = KRTC_LEGS.find(l=>l.key===legKey);
-  document.getElementById('sheetTitle').textContent = leg.name + ' 站資訊';
+async function openKrtcDetail(stationId){
+  const leg = KRTC_ALL_LEGS.find(l=>l.stationId===stationId);
+  document.getElementById('sheetTitle').textContent = (leg?leg.name:stationId) + ' 站資訊';
   document.getElementById('sheetHint').style.display = 'none';
   const body = document.getElementById('sheetBody');
   body.innerHTML = '<div class="muted">載入中…</div>';
   overlay.classList.add('show');
   try{
     const [info, data] = await Promise.all([
-      getKrtcStationInfo(leg.stationId),
-      tdxGet(`/v2/Rail/Metro/LiveBoard/KRTC?$filter=${encodeURIComponent(`StationID eq '${leg.stationId}'`)}`)
+      getKrtcStationInfo(stationId),
+      tdxGet(`/v2/Rail/Metro/LiveBoard/KRTC?$filter=${encodeURIComponent(`StationID eq '${stationId}'`)}`)
     ]);
     const trains = (data||[]).sort((a,b)=> a.EstimateTime - b.EstimateTime);
     let html = '';
@@ -423,29 +476,30 @@ async function openKrtcDetail(legKey){
       html += `<p class="hint">📍 ${info.StationAddress}</p>`;
     }
     html += trains.length ? trains.map(t=>{
-      const m = Math.round(t.EstimateTime/60);
+      const m = t.EstimateTime;
       return `<div class="stopitem">
         <div><div class="n">${t.TripHeadSign}</div><div class="d">${(t.LineName&&t.LineName.Zh_tw)||''}</div></div>
-        <div style="font-weight:800; color:var(--accent);">${t.EstimateTime<60?'進站':m+'分'}</div>
+        <div style="font-weight:800; color:var(--accent);">${krtcMinuteLabel(m)}</div>
       </div>`;
     }).join('') : '<div class="muted">目前沒有班次資訊</div>';
     body.innerHTML = html;
   }catch(e){
-    body.innerHTML = `<div class="err">⚠️ ${e.message}</div>`;
+    body.innerHTML = errBox(e.message, ()=>openKrtcDetail(stationId));
   }
 }
 
 /* ====================== 公車 ====================== */
 function getPickedStop(routeKey){
-  return JSON.parse(localStorage.getItem('busStop_'+routeKey) || 'null');
+  return JSON.parse(localStorage.getItem('busStop_'+routeKey+'_'+getMode()) || 'null');
 }
-function setPickedStop(routeKey, stop){
-  localStorage.setItem('busStop_'+routeKey, JSON.stringify(stop));
+function setPickedStop(routeKey, mode, stop){
+  localStorage.setItem('busStop_'+routeKey+'_'+mode, JSON.stringify(stop));
 }
 
 function renderBusSkeleton(){
   const wrap = document.getElementById('busCards');
   const routes = getBusRoutes();
+  const modeLabel = getMode()==='go' ? '去程' : '回程';
   wrap.innerHTML = routes.map(r=>{
     const picked = getPickedStop(r.key);
     return `<div class="card" id="bus-${r.key}">
@@ -453,34 +507,45 @@ function renderBusSkeleton(){
         <div class="card-title">
           <span class="tag" style="background:${r.color}">${r.tag}</span>
           <div>
-            <div class="card-name">${picked ? picked.StopName : '尚未選擇站牌'}</div>
-            <div class="card-sub">${picked ? (picked.dirLabel||'') : '點齒輪設定常用站牌'}</div>
+            <div class="card-name">${picked ? picked.StopName : modeLabel+'尚未選站牌'}</div>
+            <div class="card-sub">${picked ? (modeLabel+'站') : '點齒輪設定'}</div>
           </div>
         </div>
-        <div class="btnrow">
+        <div style="display:flex; gap:2px;">
           <button class="gearbtn" data-route="${r.key}" data-act="edit">⚙️</button>
           <button class="gearbtn" data-route="${r.key}" data-act="del">🗑️</button>
         </div>
       </div>
-      <div class="etalist" id="bus-eta-${r.key}"><div class="muted">${picked?'載入中…':'尚未設定'}</div></div>
+      <div class="etalist" id="bus-eta-${r.key}"><div class="skeleton" style="${picked?'':'display:none;'}"></div>${picked?'':'<div class=\"muted\">尚未設定站牌</div>'}</div>
     </div>`;
   }).join('') + `
-    <div class="card addroute" id="addRouteCard">
-      <div style="color:var(--accent); font-weight:700; font-size:14px; text-align:center;">＋ 新增公車路線</div>
-    </div>`;
+    <div class="card addroute" id="addRouteCard">＋ 新增公車路線</div>`;
   wrap.querySelectorAll('.gearbtn[data-act="edit"]').forEach(btn=>{
     btn.onclick = ()=> openStopPicker(btn.dataset.route);
   });
   wrap.querySelectorAll('.gearbtn[data-act="del"]').forEach(btn=>{
     btn.onclick = ()=>{
       const r = routes.find(x=>x.key===btn.dataset.route);
-      if(confirm(`確定要移除「${r?r.tag:''}」這條路線嗎？`)){
+      if(confirm(`確定要移除「${r?r.tag:''}」這條路線嗎？（去程／回程站牌都會一起刪除）`)){
         removeBusRoute(btn.dataset.route);
         renderBusSkeleton();
       }
     };
   });
   document.getElementById('addRouteCard').onclick = openAddRoute;
+}
+
+function renderBusEtaBox(box, stop){
+  if(!box) return;
+  if(!stop || stop.StopStatus!==1 || !stop.NextBusTime){
+    box.innerHTML = '<div class="muted">目前沒有預估到站資訊</div>';
+    return;
+  }
+  const m = stop.EstimateTime!=null ? Math.round(stop.EstimateTime/60) : minutesFrom(stop.NextBusTime);
+  box.innerHTML = `<div class="eta">
+      <div class="min ${etaClass(m)}">${fmtMin(m)}</div>
+      <div class="cap">預估到站</div>
+    </div>`;
 }
 
 async function loadBusEta(routeKey){
@@ -493,31 +558,48 @@ async function loadBusEta(routeKey){
     const filter = encodeURIComponent(`RouteName/Zh_tw eq '${route.name}'`);
     const data = await tdxGet(`/v2/Bus/EstimatedTimeOfArrival/City/Kaohsiung?$filter=${filter}`);
     const stop = (data||[]).find(s=> s.StopUID === picked.StopUID);
-    if(!stop || stop.StopStatus!==1 || !stop.NextBusTime){
-      box.innerHTML = '<div class="muted">目前沒有預估到站資訊</div>';
-      return;
-    }
-    const m = stop.EstimateTime!=null ? Math.round(stop.EstimateTime/60) : minutesFrom(stop.NextBusTime);
-    box.innerHTML = `<div class="eta">
-        <div class="min ${etaClass(m)}">${fmtMin(m)}</div>
-        <div class="cap">預估到站</div>
-      </div>`;
+    renderBusEtaBox(box, stop);
   }catch(e){
-    box.innerHTML = `<div class="err">⚠️ ${e.message}</div>`;
+    box.innerHTML = errBox(e.message, ()=>loadBusEta(routeKey));
   }
 }
 
-/* ---- stop picker modal ---- */
+async function loadAllBusEta(){
+  const routes = getBusRoutes();
+  const withStop = [];
+  routes.forEach(r=>{
+    const picked = getPickedStop(r.key);
+    const box = document.getElementById('bus-eta-'+r.key);
+    if(!box) return;
+    if(!picked){ box.innerHTML = '<div class="muted">尚未設定站牌</div>'; return; }
+    withStop.push({ route:r, stop:picked, box });
+  });
+  if(!withStop.length) return;
+  try{
+    const filter = withStop.map(x=>`StopUID eq '${x.stop.StopUID}'`).join(' or ');
+    const data = await tdxGet(`/v2/Bus/EstimatedTimeOfArrival/City/Kaohsiung?$filter=${encodeURIComponent(filter)}`);
+    withStop.forEach(({stop, box})=>{
+      const s = (data||[]).find(x=>x.StopUID===stop.StopUID);
+      renderBusEtaBox(box, s);
+    });
+  }catch(e){
+    withStop.forEach(({box})=>{ box.innerHTML = errBox(e.message, loadAllBusEta); });
+  }
+}
+
+/* ---- 站牌選擇 modal ---- */
 const overlay = document.getElementById('overlay');
 document.getElementById('closeSheet').onclick = ()=> overlay.classList.remove('show');
 overlay.onclick = (e)=>{ if(e.target===overlay) overlay.classList.remove('show'); };
 
 async function openStopPicker(routeKey){
   const route = getBusRoutes().find(r=>r.key===routeKey);
-  document.getElementById('sheetTitle').textContent = route.name + ' — 選擇站牌';
+  const mode = getMode();
+  const modeLabel = mode==='go' ? '去程' : '回程';
+  document.getElementById('sheetTitle').textContent = route.name + ' — 選擇' + modeLabel + '站牌';
   const hint = document.getElementById('sheetHint');
   hint.style.display = 'block';
-  hint.textContent = '選你平常上車的站牌，之後首頁只顯示這一站的到站時間。';
+  hint.textContent = `選你${modeLabel}時上車的站牌，之後首頁只顯示這一站的到站時間（去程／回程可各自設定不同站牌）。`;
   const body = document.getElementById('sheetBody');
   body.innerHTML = '<div class="muted">載入中…</div>';
   overlay.classList.add('show');
@@ -533,7 +615,8 @@ async function openStopPicker(routeKey){
     let html = '';
     Object.keys(byDir).sort().forEach(dir=>{
       const list = byDir[dir].sort((a,b)=>a.StopSequence-b.StopSequence);
-      html += `<div class="section-title">去程方向 ${dir}</div>`;
+      const terminus = list[list.length-1].StopName.Zh_tw;
+      html += `<div class="section-title" style="margin-top:14px;">往 ${terminus} 方向</div>`;
       html += list.map(s=>{
         const isPicked = picked && picked.StopUID===s.StopUID;
         return `<div class="stopitem">
@@ -541,7 +624,7 @@ async function openStopPicker(routeKey){
             <div class="n">${s.StopName.Zh_tw}</div>
             <div class="d">第 ${s.StopSequence} 站</div>
           </div>
-          <button data-uid="${s.StopUID}" data-dir="${dir}">${isPicked?'已選':'選擇'}</button>
+          <button data-uid="${s.StopUID}">${isPicked?'已選':'選擇'}</button>
         </div>`;
       }).join('');
     });
@@ -549,10 +632,10 @@ async function openStopPicker(routeKey){
     body.querySelectorAll('button[data-uid]').forEach(btn=>{
       btn.onclick = ()=>{
         const s = data.find(x=>x.StopUID===btn.dataset.uid);
-        setPickedStop(routeKey, {
+        setPickedStop(routeKey, mode, {
           StopUID: s.StopUID,
           StopName: s.StopName.Zh_tw,
-          dirLabel: '我的上車站 · 第 ' + s.StopSequence + ' 站'
+          seq: s.StopSequence
         });
         overlay.classList.remove('show');
         renderBusSkeleton();
@@ -560,16 +643,9 @@ async function openStopPicker(routeKey){
       };
     });
   }catch(e){
-    body.innerHTML = `<div class="err">⚠️ ${e.message}</div>`;
+    body.innerHTML = errBox(e.message, ()=>openStopPicker(routeKey));
   }
 }
-
-document.getElementById('settingsBtn').onclick = ()=>{
-  // open picker for first unconfigured route, or first route
-  const routes = getBusRoutes();
-  const target = routes.find(r=>!getPickedStop(r.key)) || routes[0];
-  if(target) openStopPicker(target.key);
-};
 
 /* ---- 新增路線 ---- */
 async function openAddRoute(){
@@ -577,15 +653,15 @@ async function openAddRoute(){
   document.getElementById('sheetHint').style.display = 'none';
   const body = document.getElementById('sheetBody');
   body.innerHTML = `
-    <div style="display:flex; gap:8px; margin-bottom:10px;">
-      <input id="routeSearchInput" type="text" placeholder="輸入路線名稱，例如 88" inputmode="search"
-        style="flex:1; min-width:0; padding:10px 12px; border-radius:10px; border:1px solid var(--border); background:var(--bg); color:var(--text); font-size:14px;">
-      <button id="routeSearchBtn" style="background:var(--accent); color:#fff; border:none; border-radius:10px; padding:0 16px; font-weight:700; flex-shrink:0;">搜尋</button>
+    <div class="searchRow">
+      <input id="routeSearchInput" type="text" placeholder="輸入路線名稱，例如 88" inputmode="search">
+      <button id="routeSearchBtn">搜尋</button>
     </div>
     <div id="routeSearchResults" class="muted">輸入路線名稱後按搜尋（僅限高雄市區公車路線）</div>
   `;
   overlay.classList.add('show');
   const input = document.getElementById('routeSearchInput');
+  input.focus();
   const doSearch = async ()=>{
     const kw = input.value.trim();
     const results = document.getElementById('routeSearchResults');
@@ -614,7 +690,7 @@ async function openAddRoute(){
         };
       });
     }catch(e){
-      results.innerHTML = `<div class="err">⚠️ ${e.message}</div>`;
+      results.innerHTML = errBox(e.message, doSearch);
     }
   };
   document.getElementById('routeSearchBtn').onclick = doSearch;
@@ -622,20 +698,39 @@ async function openAddRoute(){
 }
 
 /* ====================== 主流程 ====================== */
+function renderAll(){
+  renderKrtcSkeleton();
+  renderBusSkeleton();
+}
+
+let isRefreshing = false;
 async function refreshAll(){
-  document.getElementById('updatedAt').textContent = '更新中…';
-  await Promise.all([
-    loadTRA(),
-    loadKRTC(),
-    ...getBusRoutes().map(r=>loadBusEta(r.key))
-  ]);
-  document.getElementById('updatedAt').textContent = '最後更新 ' + nowStr();
+  if(isRefreshing) return;
+  isRefreshing = true;
+  const row = document.getElementById('updatedRow');
+  row.textContent = '更新中…';
+  document.getElementById('refreshBtn').classList.add('spin');
+  try{
+    await loadTRA();
+    await sleep(300);
+    await loadKRTC();
+    await sleep(300);
+    await loadAllBusEta();
+  } finally {
+    isRefreshing = false;
+    document.getElementById('refreshBtn').classList.remove('spin');
+  }
+  row.innerHTML = `最後更新 ${nowStr()} <button id="manualRefresh">重新整理</button>`;
+  document.getElementById('manualRefresh').onclick = refreshAll;
 }
 
 document.getElementById('refreshBtn').onclick = refreshAll;
+document.querySelectorAll('.modeBtn').forEach(btn=>{
+  btn.onclick = ()=> setMode(btn.dataset.mode);
+});
 
-renderKrtcSkeleton();
-renderBusSkeleton();
+renderModeUI();
+renderAll();
 refreshAll();
 setInterval(refreshAll, 45000);
 </script>
