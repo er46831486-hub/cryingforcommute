@@ -270,7 +270,7 @@
    因為根本沒抓到新版程式碼。這裡每次打開頁面都會用 no-store 重新跟伺服器要一次
    最新的 index.html，比對版本字串，不一樣就自動強制重新整理一次拿到最新版，
    不用使用者自己想辦法清快取。 */
-const APP_VERSION = '2026091707';
+const APP_VERSION = '2026091708';
 (function selfUpdateCheck(){
   try{
     const guardKey = 'appVersionReloadGuard';
@@ -958,30 +958,54 @@ async function openKrtcDetail(stationKey){
 }
 
 /* ====================== 公車 ====================== */
-function getPickedStop(routeKey){
-  return JSON.parse(localStorage.getItem('busStop_'+routeKey+'_'+getMode()) || 'null');
+// 一條路線在同一個模式下可以同時設定「多個」站牌（例如橘1回程要同時列出
+// 中山大學行政大樓、活動中心）。舊資料是存單一物件，這裡自動相容成陣列。
+function getPickedStops(routeKey, mode){
+  mode = mode || getMode();
+  const raw = JSON.parse(localStorage.getItem('busStop_'+routeKey+'_'+mode) || 'null');
+  if(!raw) return [];
+  return Array.isArray(raw) ? raw : [raw];
 }
-function setPickedStop(routeKey, mode, stop){
-  localStorage.setItem('busStop_'+routeKey+'_'+mode, JSON.stringify(stop));
+function setPickedStops(routeKey, mode, stops){
+  localStorage.setItem('busStop_'+routeKey+'_'+mode, JSON.stringify(stops));
+}
+function toggleStopPick(routeKey, mode, stop){
+  const stops = getPickedStops(routeKey, mode);
+  const idx = stops.findIndex(s=>s.StopUID===stop.StopUID);
+  if(idx>=0){ stops.splice(idx,1); } else { stops.push(stop); }
+  setPickedStops(routeKey, mode, stops);
+  return stops;
+}
+// 多個站牌名稱有共同開頭時（例如「中山大學行政大樓」／「中山大學活動中心」），
+// 到站方塊的小標籤把共同的部分省略掉，顯示「行政大樓」／「活動中心」就好，比較精簡。
+function shortStopLabels(stops){
+  if(stops.length <= 1) return stops.map(s=>s.StopName);
+  let prefix = stops[0].StopName;
+  stops.forEach(s=>{
+    while(prefix && !s.StopName.startsWith(prefix)) prefix = prefix.slice(0,-1);
+  });
+  return prefix.length >= 2 ? stops.map(s=> s.StopName.slice(prefix.length) || s.StopName) : stops.map(s=>s.StopName);
 }
 
 function renderBusSkeleton(){
   const wrap = document.getElementById('busCards');
   const routes = getBusRoutes();
-  const modeLabel = getMode()==='go' ? '去程' : '回程';
+  const mode = getMode();
+  const modeLabel = mode==='go' ? '去程' : '回程';
   wrap.innerHTML = routes.map(r=>{
-    const picked = getPickedStop(r.key);
+    const picked = getPickedStops(r.key, mode);
+    const hasPicked = picked.length > 0;
     return `<div class="card" id="bus-${r.key}">
       <div class="card-head">
         <div class="card-title">
           <span class="tag" style="background:${r.color}">${r.tag}</span>
           <div class="card-titletext">
-            <div class="card-name">${picked ? picked.StopName : modeLabel+'尚未選站牌'}</div>
-            <div class="card-sub">${picked ? (modeLabel+'站') : '點齒輪設定'}</div>
+            <div class="card-name">${hasPicked ? picked.map(s=>s.StopName).join('、') : modeLabel+'尚未選站牌'}</div>
+            <div class="card-sub">${hasPicked ? (modeLabel+'站') : '點齒輪設定'}</div>
           </div>
         </div>
       </div>
-      <div class="etalist" id="bus-eta-${r.key}"><div class="skeleton" style="${picked?'':'display:none;'}"></div>${picked?'':'<div class=\"muted\">尚未設定站牌</div>'}</div>
+      <div class="etalist" id="bus-eta-${r.key}"><div class="skeleton" style="${hasPicked?'':'display:none;'}"></div>${hasPicked?'':'<div class=\"muted\">尚未設定站牌</div>'}</div>
       <div class="busActions">
         <button class="gearbtn" data-route="${r.key}" data-act="edit">編輯站牌</button>
         <button class="gearbtn ghost" data-route="${r.key}" data-act="del">刪除路線</button>
@@ -1004,13 +1028,13 @@ function renderBusSkeleton(){
   document.getElementById('addRouteCard').onclick = openAddRoute;
 
   // 第 1 層：有快取到站資料的路線先畫出來，不用等這次的網路請求。
-  const mode = getMode();
   routes.forEach(r=>{
-    const picked = getPickedStop(r.key);
-    if(!picked) return;
-    const cached = lastBusStopData[r.key+'_'+mode];
-    if(cached !== undefined){
-      renderBusEtaBox(document.getElementById('bus-eta-'+r.key), cached);
+    const picked = getPickedStops(r.key, mode);
+    if(!picked.length) return;
+    const labels = shortStopLabels(picked);
+    const entries = picked.map((s,i)=>({ label:labels[i], stop: lastBusStopData[r.key+'_'+mode+'_'+s.StopUID] }));
+    if(entries.some(e=>e.stop !== undefined)){
+      renderBusEtaList(document.getElementById('bus-eta-'+r.key), entries);
     }
   });
 }
@@ -1020,45 +1044,52 @@ function renderBusSkeleton(){
 // 是真的末班車已過、今日沒車了（StopStatus 3/4），不是程式壞掉。但原本一律顯示
 // 「目前沒有預估到站資訊」，使用者沒辦法分辨是「壞了」還是「今天真的沒車了」。
 // 現在依 StopStatus 給出明確原因，一眼就能判斷是不是程式問題。
-const BUS_STATUS_NOTE = { 2:'目前交管不停靠', 3:'今日末班車已過', 4:'今日未營運' };
-function renderBusEtaBox(box, stop, stale, errMsg){
-  if(!box) return;
+const BUS_STATUS_NOTE = { 2:'交管不停靠', 3:'末班已過', 4:'今日未營運' };
+function busEtaBoxHtml(label, stop){
   const hasTime = stop && (stop.EstimateTime != null || stop.NextBusTime);
   if(!hasTime){
-    const note = stop && BUS_STATUS_NOTE[stop.StopStatus];
-    box.innerHTML = `<div class="muted">${note || '目前沒有預估到站資訊'}</div>`;
-    return;
+    const note = (stop && BUS_STATUS_NOTE[stop.StopStatus]) || '無資訊';
+    return `<div class="eta"><div class="min late" style="font-size:12px;">${note}</div><div class="cap">${label}</div></div>`;
   }
   const m = stop.EstimateTime!=null ? Math.round(stop.EstimateTime/60) : minutesFrom(stop.NextBusTime);
-  box.innerHTML = `<div class="eta">
-      <div class="min ${etaClass(m)}">${fmtMin(m)}</div>
-      <div class="cap">預估到站</div>
-    </div>` + (stale ? `<div class="staleNote">更新失敗，顯示上次資料${errMsg?'（'+errMsg+'）':''}</div>` : '');
+  return `<div class="eta"><div class="min ${etaClass(m)}">${fmtMin(m)}</div><div class="cap">${label}</div></div>`;
+}
+// entries: [{label, stop}]，一條路線設定了幾個站牌，就畫幾個到站方塊。
+function renderBusEtaList(box, entries, stale, errMsg){
+  if(!box) return;
+  if(!entries.length){ box.innerHTML = '<div class="muted">尚未設定站牌</div>'; return; }
+  box.innerHTML = entries.map(({label, stop})=> busEtaBoxHtml(label, stop)).join('')
+    + (stale ? `<div class="staleNote">更新失敗，顯示上次資料${errMsg?'（'+errMsg+'）':''}</div>` : '');
 }
 
-// key：routeKey + 模式 -> 上一次成功抓到的到站物件，失敗時當備援顯示。
+// key：routeKey + 模式 + StopUID -> 上一次成功抓到的到站物件，失敗時當備援顯示。
 let lastBusStopData = {};
 function persistBusCache(){ saveCache('busEta', lastBusStopData); }
 
 async function loadBusEta(routeKey){
   const mode = getMode();
-  const picked = getPickedStop(routeKey);
+  const picked = getPickedStops(routeKey, mode);
   const box = document.getElementById('bus-eta-'+routeKey);
   if(!box) return;
-  if(!picked){ box.innerHTML = '<div class="muted">尚未設定站牌</div>'; return; }
+  if(!picked.length){ box.innerHTML = '<div class="muted">尚未設定站牌</div>'; return; }
   try{
     const route = getBusRoutes().find(r=>r.key===routeKey);
     const filter = encodeURIComponent(`RouteName/Zh_tw eq '${route.name}'`);
     const data = await tdxGet(`/v2/Bus/EstimatedTimeOfArrival/City/Kaohsiung?$filter=${filter}`, 'high');
-    const stop = (data||[]).find(s=> s.StopUID === picked.StopUID);
-    lastBusStopData[routeKey+'_'+mode] = stop || null;
+    const labels = shortStopLabels(picked);
+    const entries = picked.map((p,i)=>{
+      const stop = (data||[]).find(s=> s.StopUID === p.StopUID) || null;
+      lastBusStopData[routeKey+'_'+mode+'_'+p.StopUID] = stop;
+      return { label: labels[i], stop };
+    });
     persistBusCache();
     // 回應回來時模式可能已經切換了，慢半拍的結果只存快取，畫面交給目前的模式處理。
-    if(mode === getMode()) renderBusEtaBox(box, stop);
+    if(mode === getMode()) renderBusEtaList(box, entries);
   }catch(e){
     if(mode !== getMode()) return;
-    const cached = lastBusStopData[routeKey+'_'+mode];
-    if(cached){ renderBusEtaBox(box, cached, true, e.message); }
+    const labels = shortStopLabels(picked);
+    const entries = picked.map((p,i)=>({ label:labels[i], stop: lastBusStopData[routeKey+'_'+mode+'_'+p.StopUID] }));
+    if(entries.some(en=>en.stop !== undefined)){ renderBusEtaList(box, entries, true, e.message); }
     else { box.innerHTML = errBox(e.message, ()=>loadBusEta(routeKey)); }
   }
 }
@@ -1066,31 +1097,40 @@ async function loadBusEta(routeKey){
 async function loadAllBusEta(){
   const mode = getMode();
   const routes = getBusRoutes();
-  const withStop = [];
+  const withStop = []; // 攤平成「每個路線、每個站牌」一筆
   routes.forEach(r=>{
-    const picked = getPickedStop(r.key);
+    const picked = getPickedStops(r.key, mode);
     const box = document.getElementById('bus-eta-'+r.key);
     if(!box) return;
-    if(!picked){ box.innerHTML = '<div class="muted">尚未設定站牌</div>'; return; }
-    withStop.push({ route:r, stop:picked, box });
+    if(!picked.length){ box.innerHTML = '<div class="muted">尚未設定站牌</div>'; return; }
+    const labels = shortStopLabels(picked);
+    picked.forEach((p,i)=> withStop.push({ route:r, stop:p, label:labels[i], box }));
   });
   if(!withStop.length) return;
   try{
-    const filter = withStop.map(x=>`StopUID eq '${x.stop.StopUID}'`).join(' or ');
+    const uids = [...new Set(withStop.map(x=>x.stop.StopUID))];
+    const filter = uids.map(uid=>`StopUID eq '${uid}'`).join(' or ');
     const data = await tdxGet(`/v2/Bus/EstimatedTimeOfArrival/City/Kaohsiung?$filter=${encodeURIComponent(filter)}`);
     const stillCurrent = mode === getMode();
-    withStop.forEach(({route, stop, box})=>{
+    withStop.forEach(({route, stop})=>{
       const s = (data||[]).find(x=>x.StopUID===stop.StopUID);
-      lastBusStopData[route.key+'_'+mode] = s || null;
-      if(stillCurrent) renderBusEtaBox(box, s);
+      lastBusStopData[route.key+'_'+mode+'_'+stop.StopUID] = s || null;
     });
     persistBusCache();
+    if(stillCurrent){
+      routes.forEach(r=>{
+        const entries = withStop.filter(x=>x.route.key===r.key).map(x=>({ label:x.label, stop:lastBusStopData[r.key+'_'+mode+'_'+x.stop.StopUID] }));
+        if(entries.length) renderBusEtaList(document.getElementById('bus-eta-'+r.key), entries);
+      });
+    }
   }catch(e){
     if(mode !== getMode()) return;
-    withStop.forEach(({route, box})=>{
-      const cached = lastBusStopData[route.key+'_'+mode];
-      if(cached){ renderBusEtaBox(box, cached, true, e.message); }
-      else { box.innerHTML = errBox(e.message, loadAllBusEta); }
+    routes.forEach(r=>{
+      const items = withStop.filter(x=>x.route.key===r.key);
+      if(!items.length) return;
+      const entries = items.map(x=>({ label:x.label, stop:lastBusStopData[r.key+'_'+mode+'_'+x.stop.StopUID] }));
+      if(entries.some(en=>en.stop !== undefined)){ renderBusEtaList(items[0].box, entries, true, e.message); }
+      else { items[0].box.innerHTML = errBox(e.message, loadAllBusEta); }
     });
   }
 }
@@ -1257,9 +1297,11 @@ overlay.onclick = (e)=>{ if(e.target===overlay) overlay.classList.remove('show')
 // 完全不用等網路、也不會再消耗一次查詢額度。
 const BUS_STOPS_TTL = 24*3600*1000;
 
+// 可以同時選多個站牌（例如橘1回程要同時列出行政大樓、活動中心），
+// 點一下切換已選／未選，不會自動關掉視窗，選完按下面的「完成」再收合。
 function renderStopPickerList(data, routeKey, mode){
   const body = document.getElementById('sheetBody');
-  const picked = getPickedStop(routeKey);
+  const picked = getPickedStops(routeKey, mode);
   const byDir = {};
   (data||[]).forEach(s=>{
     byDir[s.Direction] = byDir[s.Direction] || [];
@@ -1271,8 +1313,8 @@ function renderStopPickerList(data, routeKey, mode){
     const terminus = list[list.length-1].StopName.Zh_tw;
     html += `<div class="section-title" style="margin-top:14px;">往 ${terminus} 方向</div>`;
     html += list.map(s=>{
-      const isPicked = picked && picked.StopUID===s.StopUID;
-      return `<div class="stopitem">
+      const isPicked = picked.some(p=>p.StopUID===s.StopUID);
+      return `<div class="stopitem${isPicked?' picked':''}">
         <div>
           <div class="n">${s.StopName.Zh_tw}</div>
           <div class="d">第 ${s.StopSequence} 站</div>
@@ -1281,20 +1323,19 @@ function renderStopPickerList(data, routeKey, mode){
       </div>`;
     }).join('');
   });
+  html += `<button class="fullBtn" id="stopPickerDoneBtn" style="margin-top:16px;">完成（已選 ${picked.length} 站）</button>`;
   body.innerHTML = html || '<div class="muted">查無站牌資料</div>';
   body.querySelectorAll('button[data-uid]').forEach(btn=>{
     btn.onclick = ()=>{
       const s = data.find(x=>x.StopUID===btn.dataset.uid);
-      setPickedStop(routeKey, mode, {
-        StopUID: s.StopUID,
-        StopName: s.StopName.Zh_tw,
-        seq: s.StopSequence
-      });
-      overlay.classList.remove('show');
+      toggleStopPick(routeKey, mode, { StopUID: s.StopUID, StopName: s.StopName.Zh_tw, seq: s.StopSequence });
+      renderStopPickerList(data, routeKey, mode); // 重新畫一次，更新已選狀態跟完成按鈕的數量
       renderBusSkeleton();
       loadBusEta(routeKey);
     };
   });
+  const doneBtn = document.getElementById('stopPickerDoneBtn');
+  if(doneBtn) doneBtn.onclick = ()=> overlay.classList.remove('show');
 }
 
 // 防止連點：同一條路線如果已經有一個請求在飛，重複點擊不會再送出第二個，
@@ -1453,19 +1494,23 @@ function hydrateFromCache(){
 // 使用者指定的固定站牌（去程一律捷運哈瑪星站出口1；回程依路線分別停靠中山大學行政大樓／隧道口）。
 // 用版本字串控制只套用一次：套用過的瀏覽器不會被重複覆蓋，之後使用者自己改的站牌不會被蓋掉；
 // 之後如果要再次強制套用新的固定站牌，把 BUS_STOP_PRESETS_VERSION 往上跳一版即可。
-const BUS_STOP_PRESETS_VERSION = 'v1';
+const BUS_STOP_PRESETS_VERSION = 'v2';
 const BUS_STOP_PRESETS = {
   go: {
-    o1:  { StopUID:'KHH100901143241', StopName:'捷運哈瑪星站(出口1)(輕軌哈瑪星站)', seq:2 },
-    o1e: { StopUID:'KHH109011143241', StopName:'捷運哈瑪星站(出口1)(輕軌哈瑪星站)', seq:2 },
-    r52: { StopUID:'KHH10085215981',  StopName:'捷運哈瑪星站(出口1)(輕軌哈瑪星站)', seq:16 },
-    w50: { StopUID:'KHH10005090721',  StopName:'捷運哈瑪星站(出口1)(輕軌哈瑪星站)', seq:24 }
+    o1:  [{ StopUID:'KHH100901143241', StopName:'捷運哈瑪星站(出口1)(輕軌哈瑪星站)', seq:2 }],
+    o1e: [{ StopUID:'KHH109011143241', StopName:'捷運哈瑪星站(出口1)(輕軌哈瑪星站)', seq:2 }],
+    r52: [{ StopUID:'KHH10085215981',  StopName:'捷運哈瑪星站(出口1)(輕軌哈瑪星站)', seq:16 }],
+    w50: [{ StopUID:'KHH10005090721',  StopName:'捷運哈瑪星站(出口1)(輕軌哈瑪星站)', seq:24 }]
   },
   back: {
-    o1:  { StopUID:'KHH10090131852',  StopName:'中山大學行政大樓', seq:6 },
-    o1e: { StopUID:'KHH10901131852',  StopName:'中山大學行政大樓', seq:6 },
-    r52: { StopUID:'KHH100852190122', StopName:'中山大學行政大樓', seq:1 },
-    w50: { StopUID:'KHH10005018431',  StopName:'中山大學(隧道口)', seq:26 }
+    // 橘1回程同時列出行政大樓、活動中心兩站。
+    o1:  [
+      { StopUID:'KHH10090131852',  StopName:'中山大學行政大樓', seq:6 },
+      { StopUID:'KHH100901192512', StopName:'中山大學活動中心', seq:5 }
+    ],
+    o1e: [{ StopUID:'KHH10901131852',  StopName:'中山大學行政大樓', seq:6 }],
+    r52: [{ StopUID:'KHH100852190122', StopName:'中山大學行政大樓', seq:1 }],
+    w50: [{ StopUID:'KHH10005018431',  StopName:'中山大學(隧道口)', seq:26 }]
   }
 };
 function applyBusStopPresetsOnce(){
@@ -1473,7 +1518,7 @@ function applyBusStopPresetsOnce(){
   if(localStorage.getItem(key) === BUS_STOP_PRESETS_VERSION) return;
   ['go','back'].forEach(mode=>{
     Object.keys(BUS_STOP_PRESETS[mode]).forEach(routeKey=>{
-      setPickedStop(routeKey, mode, BUS_STOP_PRESETS[mode][routeKey]);
+      setPickedStops(routeKey, mode, BUS_STOP_PRESETS[mode][routeKey]);
     });
   });
   localStorage.setItem(key, BUS_STOP_PRESETS_VERSION);
