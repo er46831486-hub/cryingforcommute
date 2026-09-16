@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-title" content="通勤">
+<meta name="theme-color" content="#0f172a" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#f8fafc" media="(prefers-color-scheme: light)">
+<title>通勤小幫手</title>
+<style>
+  :root{
+    --bg:#f8fafc; --card:#ffffff; --text:#0f172a; --sub:#64748b;
+    --border:#e2e8f0; --accent:#2563eb; --accent2:#0891b2;
+    --good:#16a34a; --warn:#d97706; --bad:#dc2626;
+    --shadow:0 1px 3px rgba(0,0,0,.06), 0 1px 2px rgba(0,0,0,.04);
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --bg:#0b1220; --card:#141d2e; --text:#e5eaf2; --sub:#93a1b7;
+      --border:#243349; --accent:#5b9dff; --accent2:#33c3dc;
+      --good:#34d97a; --warn:#f5b942; --bad:#f87171;
+      --shadow:0 1px 3px rgba(0,0,0,.4);
+    }
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  html,body{margin:0; padding:0; background:var(--bg); color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"PingFang TC","Helvetica Neue",sans-serif;}
+  body{
+    padding: max(14px, env(safe-area-inset-top)) 14px calc(24px + env(safe-area-inset-bottom));
+    min-height:100vh;
+  }
+  .topbar{display:flex; align-items:center; justify-content:space-between; margin-bottom:14px;}
+  .topbar h1{font-size:19px; margin:0; font-weight:700; letter-spacing:.2px;}
+  .topbar .sub{font-size:12px; color:var(--sub); margin-top:2px;}
+  .iconbtn{
+    width:38px; height:38px; border-radius:12px; border:1px solid var(--border);
+    background:var(--card); display:flex; align-items:center; justify-content:center;
+    font-size:17px; color:var(--sub); flex-shrink:0;
+  }
+  .iconbtn:active{opacity:.6;}
+  .btnrow{display:flex; gap:8px;}
+
+  .hero{
+    background:linear-gradient(135deg, var(--accent), var(--accent2));
+    border-radius:20px; padding:18px; color:#fff; margin-bottom:16px;
+    box-shadow:var(--shadow); position:relative; overflow:hidden;
+  }
+  .hero-top{display:flex; justify-content:space-between; align-items:flex-start;}
+  .hero-label{font-size:12px; opacity:.85; font-weight:600; letter-spacing:.5px;}
+  .hero-route{font-size:17px; font-weight:700; margin-top:2px;}
+  .swapbtn{
+    background:rgba(255,255,255,.22); border:none; color:#fff; border-radius:10px;
+    width:34px; height:34px; font-size:15px; display:flex; align-items:center; justify-content:center;
+  }
+  .swapbtn:active{background:rgba(255,255,255,.35);}
+  .hero-trains{margin-top:14px; display:flex; flex-direction:column; gap:8px;}
+  .hero-train{
+    display:flex; justify-content:space-between; align-items:center;
+    background:rgba(255,255,255,.14); border-radius:12px; padding:10px 12px;
+  }
+  .hero-train .l{font-size:13px; opacity:.95;}
+  .hero-train .l small{display:block; font-size:11px; opacity:.75; margin-top:1px;}
+  .hero-train .r{font-size:20px; font-weight:800; text-align:right;}
+  .hero-train .r small{display:block; font-size:11px; font-weight:600; opacity:.85;}
+  .hero-empty{margin-top:14px; font-size:13px; opacity:.85;}
+
+  .section-title{font-size:13px; font-weight:700; color:var(--sub); margin:18px 2px 8px; letter-spacing:.3px;}
+
+  .card{
+    background:var(--card); border:1px solid var(--border); border-radius:16px;
+    padding:14px; margin-bottom:10px; box-shadow:var(--shadow);
+  }
+  .card-head{display:flex; justify-content:space-between; align-items:center; gap:8px;}
+  .card-title{display:flex; align-items:center; gap:8px; min-width:0;}
+  .tag{
+    font-size:11px; font-weight:800; color:#fff; border-radius:7px; padding:3px 7px;
+    flex-shrink:0;
+  }
+  .card-name{font-size:14.5px; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+  .card-sub{font-size:12px; color:var(--sub); margin-top:2px;}
+  .gearbtn{background:none; border:none; color:var(--sub); font-size:15px; padding:4px; flex-shrink:0;}
+
+  .etalist{display:flex; gap:8px; margin-top:10px; flex-wrap:wrap;}
+  .eta{
+    background:var(--bg); border:1px solid var(--border); border-radius:10px;
+    padding:8px 10px; min-width:64px; text-align:center;
+  }
+  .eta .min{font-size:17px; font-weight:800; color:var(--accent);}
+  .eta .min.soon{color:var(--good);}
+  .eta .min.late{color:var(--sub);}
+  .eta .cap{font-size:10px; color:var(--sub); margin-top:1px;}
+
+  .muted{color:var(--sub); font-size:13px; padding:6px 0;}
+  .err{color:var(--bad); font-size:12.5px; padding:6px 0;}
+
+  .footer{text-align:center; color:var(--sub); font-size:11.5px; margin-top:18px;}
+  .footer button{
+    background:none; border:none; color:var(--accent); font-size:12px; font-weight:600;
+    padding:6px 10px;
+  }
+
+  /* modal */
+  .overlay{
+    position:fixed; inset:0; background:rgba(0,0,0,.45); display:none;
+    align-items:flex-end; z-index:50;
+  }
+  .overlay.show{display:flex;}
+  .sheet{
+    background:var(--card); width:100%; max-height:82vh; border-radius:20px 20px 0 0;
+    padding:16px 16px calc(16px + env(safe-area-inset-bottom)); overflow-y:auto;
+    animation:up .18s ease-out;
+  }
+  @keyframes up{from{transform:translateY(16px); opacity:.5} to{transform:translateY(0); opacity:1}}
+  .sheet h2{font-size:16px; margin:0 0 4px;}
+  .sheet p.hint{font-size:12px; color:var(--sub); margin:0 0 12px;}
+  .stopitem{
+    display:flex; justify-content:space-between; align-items:center;
+    padding:11px 4px; border-bottom:1px solid var(--border); font-size:14px;
+  }
+  .stopitem .n{font-weight:600;}
+  .stopitem .d{font-size:11px; color:var(--sub);}
+  .stopitem button{
+    background:var(--accent); color:#fff; border:none; border-radius:8px;
+    font-size:12px; padding:6px 12px; font-weight:700; flex-shrink:0;
+  }
+  .stopitem.picked button{background:var(--good);}
+  .closebar{display:flex; justify-content:flex-end; margin-bottom:6px;}
+  .closebar button{background:none; border:none; color:var(--sub); font-size:14px; padding:6px;}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div>
+    <h1>通勤小幫手</h1>
+    <div class="sub" id="updatedAt">載入中…</div>
+  </div>
+  <div class="btnrow">
+    <button class="iconbtn" id="refreshBtn" title="重新整理">⟳</button>
+  </div>
+</div>
+
+<!-- Hero: TRA -->
+<div class="hero">
+  <div class="hero-top">
+    <div>
+      <div class="hero-label">台鐵 · 重點路線</div>
+      <div class="hero-route" id="traRouteLabel">高雄 → 屏東</div>
+    </div>
+    <button class="swapbtn" id="traSwap">⇄</button>
+  </div>
+  <div class="hero-trains" id="traTrains">
+    <div class="hero-empty">載入中…</div>
+  </div>
+</div>
+
+<div class="section-title">高雄捷運</div>
+<div id="krtcCards"></div>
+
+<div class="section-title">公車</div>
+<div id="busCards"></div>
+
+<div class="footer">
+  資料來源：TDX 運輸資料流通服務平臺 · 每 60 秒自動更新<br>
+  <button id="settingsBtn">設定常用公車站牌</button>
+</div>
+
+<!-- Stop picker modal -->
+<div class="overlay" id="overlay">
+  <div class="sheet">
+    <div class="closebar"><button id="closeSheet">關閉 ✕</button></div>
+    <h2 id="sheetTitle">選擇站牌</h2>
+    <p class="hint">選你平常上車的站牌，之後首頁只顯示這一站的到站時間。</p>
+    <div id="sheetBody"><div class="muted">載入中…</div></div>
+  </div>
+</div>
+
+<script>
+/* ====================== 設定區 ====================== */
+const TDX_CLIENT_ID = 'er46831486-0c5e305e-3e19-4a3b';
+const TDX_CLIENT_SECRET = '6c59a199-57f8-4f50-9723-b12a63fd529b';
+const TDX_AUTH_URL = 'https://tdx.transportdata.tw/auth/realms/TDXConnect/protocol/openid-connect/token';
+const TDX_API = 'https://tdx.transportdata.tw/api/basic';
+
+const TRA_STATIONS = { KAOHSIUNG: '4400', PINGTUNG: '5000' };
+// Direction 1 = 南下(高雄→屏東方向), Direction 0 = 北上(屏東→高雄方向)
+const TRA_DIRECTIONS = {
+  toPingtung: { fromStation: TRA_STATIONS.KAOHSIUNG, direction: 1, label: '高雄 → 屏東' },
+  toKaohsiung: { fromStation: TRA_STATIONS.PINGTUNG, direction: 0, label: '屏東 → 高雄' }
+};
+
+const KRTC_LEGS = [
+  { key:'hamasen', name:'哈瑪星', stationId:'O1', headsignMatch:'大寮', note:'橘線起站，於美麗島轉紅線可到高雄車站' },
+  { key:'kstation', name:'高雄車站', stationId:'R11', headsignMatch:'小港', note:'紅線南下，於美麗島轉橘線可到哈瑪星' }
+];
+
+const BUS_ROUTES = [
+  { key:'o1',  name:'橘1',      tag:'橘1',   color:'#f97316' },
+  { key:'o1e', name:'橘1延',    tag:'橘1延', color:'#fb923c' },
+  { key:'r52', name:'紅52',     tag:'紅52',  color:'#dc2626' },
+  { key:'w50', name:'50五福幹線', tag:'五福幹線', color:'#7c3aed' }
+];
+
+/* ====================== Token ====================== */
+async function getToken(){
+  const cached = JSON.parse(localStorage.getItem('tdx_token') || 'null');
+  if (cached && cached.expiresAt > Date.now() + 60000) return cached.token;
+  const res = await fetch(TDX_AUTH_URL, {
+    method:'POST',
+    headers:{'Content-Type':'application/x-www-form-urlencoded'},
+    body:new URLSearchParams({
+      grant_type:'client_credentials',
+      client_id:TDX_CLIENT_ID,
+      client_secret:TDX_CLIENT_SECRET
+    })
+  });
+  if(!res.ok) throw new Error('TDX 授權失敗');
+  const json = await res.json();
+  const data = { token: json.access_token, expiresAt: Date.now() + json.expires_in*1000 };
+  localStorage.setItem('tdx_token', JSON.stringify(data));
+  return data.token;
+}
+
+async function tdxGet(path){
+  const token = await getToken();
+  const res = await fetch(TDX_API + path + (path.includes('?')?'&':'?') + '$format=JSON', {
+    headers:{ Authorization:'Bearer '+token, Accept:'application/json' }
+  });
+  if(res.status === 429) throw new Error('查詢太頻繁，稍後再試');
+  if(!res.ok) throw new Error('資料取得失敗 ('+res.status+')');
+  return res.json();
+}
+
+/* ====================== 小工具 ====================== */
+function minutesFrom(dateStr){
+  const diffMs = new Date(dateStr).getTime() - Date.now();
+  return Math.max(0, Math.round(diffMs/60000));
+}
+function fmtMin(m){ return m<=0 ? '進站' : m+'分'; }
+function etaClass(m){ return m<=3 ? 'soon' : (m>=15 ? 'late' : ''); }
+function nowStr(){
+  return new Date().toLocaleTimeString('zh-TW',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+}
+
+/* ====================== 台鐵 ====================== */
+let traDirKey = 'toPingtung';
+
+async function loadTRA(){
+  const el = document.getElementById('traTrains');
+  const cfg = TRA_DIRECTIONS[traDirKey];
+  document.getElementById('traRouteLabel').textContent = cfg.label;
+  try{
+    const data = await tdxGet(`/v2/Rail/TRA/LiveBoard/Station/${cfg.fromStation}`);
+    const trains = (data||[])
+      .filter(t => t.Direction === cfg.direction)
+      .sort((a,b)=> a.ScheduledDepartureTime.localeCompare(b.ScheduledDepartureTime))
+      .slice(0,3);
+    if(!trains.length){
+      el.innerHTML = '<div class="hero-empty">目前沒有查到班次</div>';
+      return;
+    }
+    el.innerHTML = trains.map(t=>{
+      const delay = t.DelayTime>0 ? `誤點 ${t.DelayTime} 分` : '準點';
+      return `<div class="hero-train">
+        <div class="l">${t.TrainTypeName.Zh_tw} ${t.TrainNo}
+          <small>往${t.EndingStationName.Zh_tw} · ${t.ScheduledDepartureTime.slice(0,5)} · ${delay}</small>
+        </div>
+        <div class="r">${t.ScheduledDepartureTime.slice(0,5)}</div>
+      </div>`;
+    }).join('');
+  }catch(e){
+    el.innerHTML = `<div class="hero-empty">⚠️ ${e.message}</div>`;
+  }
+}
+
+document.getElementById('traSwap').onclick = ()=>{
+  traDirKey = traDirKey==='toPingtung' ? 'toKaohsiung' : 'toPingtung';
+  loadTRA();
+};
+
+/* ====================== 高雄捷運 ====================== */
+function renderKrtcSkeleton(){
+  const wrap = document.getElementById('krtcCards');
+  wrap.innerHTML = KRTC_LEGS.map(leg=>`
+    <div class="card" id="krtc-${leg.key}">
+      <div class="card-head">
+        <div class="card-title">
+          <span class="tag" style="background:${leg.stationId==='O1'?'#f97316':'#dc2626'}">${leg.stationId==='O1'?'橘線':'紅線'}</span>
+          <div>
+            <div class="card-name">${leg.name} 站</div>
+            <div class="card-sub">${leg.note}</div>
+          </div>
+        </div>
+      </div>
+      <div class="etalist" id="krtc-eta-${leg.key}"><div class="muted">載入中…</div></div>
+    </div>
+  `).join('');
+}
+
+async function loadKRTC(){
+  try{
+    const ids = KRTC_LEGS.map(l=>l.stationId);
+    const filter = ids.map(id=>`StationID eq '${id}'`).join(' or ');
+    const data = await tdxGet(`/v2/Rail/Metro/LiveBoard/KRTC?$filter=${encodeURIComponent(filter)}`);
+    KRTC_LEGS.forEach(leg=>{
+      const box = document.getElementById('krtc-eta-'+leg.key);
+      const trains = (data||[])
+        .filter(t=> t.StationID===leg.stationId && (t.TripHeadSign||'').includes(leg.headsignMatch))
+        .sort((a,b)=> a.EstimateTime - b.EstimateTime)
+        .slice(0,3);
+      if(!trains.length){ box.innerHTML = '<div class="muted">目前沒有班次資訊</div>'; return; }
+      box.innerHTML = trains.map(t=>{
+        const m = Math.round(t.EstimateTime/60);
+        return `<div class="eta">
+          <div class="min ${etaClass(m)}">${t.EstimateTime<60? '進站' : m+'分'}</div>
+          <div class="cap">${t.TripHeadSign}</div>
+        </div>`;
+      }).join('');
+    });
+  }catch(e){
+    KRTC_LEGS.forEach(leg=>{
+      document.getElementById('krtc-eta-'+leg.key).innerHTML = `<div class="err">⚠️ ${e.message}</div>`;
+    });
+  }
+}
+
+/* ====================== 公車 ====================== */
+function getPickedStop(routeKey){
+  return JSON.parse(localStorage.getItem('busStop_'+routeKey) || 'null');
+}
+function setPickedStop(routeKey, stop){
+  localStorage.setItem('busStop_'+routeKey, JSON.stringify(stop));
+}
+
+function renderBusSkeleton(){
+  const wrap = document.getElementById('busCards');
+  wrap.innerHTML = BUS_ROUTES.map(r=>{
+    const picked = getPickedStop(r.key);
+    return `<div class="card" id="bus-${r.key}">
+      <div class="card-head">
+        <div class="card-title">
+          <span class="tag" style="background:${r.color}">${r.tag}</span>
+          <div>
+            <div class="card-name">${picked ? picked.StopName : '尚未選擇站牌'}</div>
+            <div class="card-sub">${picked ? (picked.dirLabel||'') : '點右側齒輪設定常用站牌'}</div>
+          </div>
+        </div>
+        <button class="gearbtn" data-route="${r.key}">⚙️</button>
+      </div>
+      <div class="etalist" id="bus-eta-${r.key}"><div class="muted">${picked?'載入中…':'尚未設定'}</div></div>
+    </div>`;
+  }).join('');
+  wrap.querySelectorAll('.gearbtn').forEach(btn=>{
+    btn.onclick = ()=> openStopPicker(btn.dataset.route);
+  });
+}
+
+async function loadBusEta(routeKey){
+  const picked = getPickedStop(routeKey);
+  const box = document.getElementById('bus-eta-'+routeKey);
+  if(!picked){ box.innerHTML = '<div class="muted">尚未設定站牌</div>'; return; }
+  try{
+    const route = BUS_ROUTES.find(r=>r.key===routeKey);
+    const filter = encodeURIComponent(`RouteName/Zh_tw eq '${route.name}'`);
+    const data = await tdxGet(`/v2/Bus/EstimatedTimeOfArrival/City/Kaohsiung?$filter=${filter}`);
+    const stop = (data||[]).find(s=> s.StopUID === picked.StopUID);
+    if(!stop || stop.StopStatus!==1 || !stop.NextBusTime){
+      box.innerHTML = '<div class="muted">目前沒有預估到站資訊</div>';
+      return;
+    }
+    const m = stop.EstimateTime!=null ? Math.round(stop.EstimateTime/60) : minutesFrom(stop.NextBusTime);
+    box.innerHTML = `<div class="eta">
+        <div class="min ${etaClass(m)}">${fmtMin(m)}</div>
+        <div class="cap">預估到站</div>
+      </div>`;
+  }catch(e){
+    box.innerHTML = `<div class="err">⚠️ ${e.message}</div>`;
+  }
+}
+
+/* ---- stop picker modal ---- */
+const overlay = document.getElementById('overlay');
+document.getElementById('closeSheet').onclick = ()=> overlay.classList.remove('show');
+overlay.onclick = (e)=>{ if(e.target===overlay) overlay.classList.remove('show'); };
+
+async function openStopPicker(routeKey){
+  const route = BUS_ROUTES.find(r=>r.key===routeKey);
+  document.getElementById('sheetTitle').textContent = route.name + ' — 選擇站牌';
+  const body = document.getElementById('sheetBody');
+  body.innerHTML = '<div class="muted">載入中…</div>';
+  overlay.classList.add('show');
+  try{
+    const filter = encodeURIComponent(`RouteName/Zh_tw eq '${route.name}'`);
+    const data = await tdxGet(`/v2/Bus/EstimatedTimeOfArrival/City/Kaohsiung?$filter=${filter}`);
+    const picked = getPickedStop(routeKey);
+    const byDir = {};
+    (data||[]).forEach(s=>{
+      byDir[s.Direction] = byDir[s.Direction] || [];
+      byDir[s.Direction].push(s);
+    });
+    let html = '';
+    Object.keys(byDir).sort().forEach(dir=>{
+      const list = byDir[dir].sort((a,b)=>a.StopSequence-b.StopSequence);
+      html += `<div class="section-title">去程方向 ${dir}</div>`;
+      html += list.map(s=>{
+        const isPicked = picked && picked.StopUID===s.StopUID;
+        return `<div class="stopitem">
+          <div>
+            <div class="n">${s.StopName.Zh_tw}</div>
+            <div class="d">第 ${s.StopSequence} 站</div>
+          </div>
+          <button data-uid="${s.StopUID}" data-dir="${dir}">${isPicked?'已選':'選擇'}</button>
+        </div>`;
+      }).join('');
+    });
+    body.innerHTML = html || '<div class="muted">查無站牌資料</div>';
+    body.querySelectorAll('button[data-uid]').forEach(btn=>{
+      btn.onclick = ()=>{
+        const s = data.find(x=>x.StopUID===btn.dataset.uid);
+        setPickedStop(routeKey, {
+          StopUID: s.StopUID,
+          StopName: s.StopName.Zh_tw,
+          dirLabel: '我的上車站 · 第 ' + s.StopSequence + ' 站'
+        });
+        overlay.classList.remove('show');
+        renderBusSkeleton();
+        loadBusEta(routeKey);
+      };
+    });
+  }catch(e){
+    body.innerHTML = `<div class="err">⚠️ ${e.message}</div>`;
+  }
+}
+
+document.getElementById('settingsBtn').onclick = ()=>{
+  // open picker for first unconfigured route, or first route
+  const target = BUS_ROUTES.find(r=>!getPickedStop(r.key)) || BUS_ROUTES[0];
+  openStopPicker(target.key);
+};
+
+/* ====================== 主流程 ====================== */
+async function refreshAll(){
+  document.getElementById('updatedAt').textContent = '更新中…';
+  await Promise.all([
+    loadTRA(),
+    loadKRTC(),
+    ...BUS_ROUTES.map(r=>loadBusEta(r.key))
+  ]);
+  document.getElementById('updatedAt').textContent = '最後更新 ' + nowStr();
+}
+
+document.getElementById('refreshBtn').onclick = refreshAll;
+
+renderKrtcSkeleton();
+renderBusSkeleton();
+refreshAll();
+setInterval(refreshAll, 60000);
+</script>
+</body>
+</html>
