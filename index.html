@@ -67,6 +67,7 @@
   /* ---- section ---- */
   .section-title{font-size:12.5px; font-weight:800; color:var(--sub); margin:20px 2px 8px; letter-spacing:.4px; text-transform:uppercase; display:flex; align-items:center; gap:6px;}
   .sectionIcon{display:inline-flex; color:var(--accent); flex-shrink:0;}
+  .sectionIcon svg{width:15px; height:15px;}
   .hero-label{display:flex; align-items:center; gap:6px;}
   .staleNote{width:100%; font-size:10.5px; color:var(--warn); margin-top:6px;}
   .rangeBtn{background:var(--bg); border:1px solid var(--border); color:var(--sub); font-size:11.5px; font-weight:700; padding:7px 11px; border-radius:9px; flex-shrink:0;}
@@ -289,7 +290,7 @@
    因為根本沒抓到新版程式碼。這裡每次打開頁面都會用 no-store 重新跟伺服器要一次
    最新的 index.html，比對版本字串，不一樣就自動強制重新整理一次拿到最新版，
    不用使用者自己想辦法清快取。 */
-const APP_VERSION = '2026091710';
+const APP_VERSION = '2026091711';
 (function selfUpdateCheck(){
   try{
     const guardKey = 'appVersionReloadGuard';
@@ -852,6 +853,17 @@ async function ensureKrtcFacility(stationIds, priority){
   saveCache(key, data || []);
   return data || [];
 }
+// 純文字＋小圖示列出來就好，不要連結、不要要人家另外點開下載任何東西。
+const KRTC_FACILITY_CATS = [
+  { key:'Toilets', label:'廁所',
+    icon:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="5" r="2.3"/><path d="M8 21v-6.5H6l2-6h8l2 6h-2V21"/></svg>' },
+  { key:'DrinkingFountains', label:'飲水機',
+    icon:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3s6 7.2 6 11.2a6 6 0 0 1-12 0C6 10.2 12 3 12 3Z"/></svg>' },
+  { key:'Elevators', label:'無障礙電梯',
+    icon:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M10 9.5l2-2 2 2M10 14.5l2 2 2-2"/></svg>' },
+  { key:'InformationSpots', label:'詢問處',
+    icon:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 11v5.3M12 7.7h.01"/></svg>' }
+];
 async function openKrtcFacility(stationKey){
   const st = KRTC_STATIONS.find(s=>s.key===stationKey);
   document.getElementById('sheetTitle').textContent = st.name + ' 站內設施';
@@ -861,24 +873,13 @@ async function openKrtcFacility(stationKey){
   overlay.classList.add('show');
   try{
     const data = await ensureKrtcFacility(st.ids, 'high');
-    const cats = [
-      { key:'Toilets', label:'廁所' },
-      { key:'DrinkingFountains', label:'飲水機' },
-      { key:'Elevators', label:'無障礙電梯' },
-      { key:'InformationSpots', label:'詢問處' }
-    ];
     let html = '';
-    cats.forEach(cat=>{
+    KRTC_FACILITY_CATS.forEach(cat=>{
       const items = data.flatMap(d=> d[cat.key] || []);
       if(!items.length) return;
-      html += `<div class="section-title" style="margin-top:14px;">${cat.label}</div>`;
+      html += `<div class="section-title" style="margin-top:14px;"><span class="sectionIcon">${cat.icon}</span>${cat.label}</div>`;
       html += items.map(it=>`<div class="stopitem"><div><div class="n">${it.Description||''}</div>${it.FloorLevel?`<div class="d">樓層 ${it.FloorLevel}</div>`:''}</div></div>`).join('');
     });
-    const maps = data.flatMap(d=> d.FacilityMapURLs || []);
-    if(maps.length){
-      html += `<div class="section-title" style="margin-top:14px;">站內平面圖</div>`;
-      html += maps.map(m=>`<a href="${m.MapURL}" target="_blank" rel="noopener" style="display:block; padding:10px 2px; color:var(--accent); font-weight:700; font-size:13.5px;">${m.MapName.Zh_tw} →</a>`).join('');
-    }
     body.innerHTML = html || '<div class="muted">查無此站設施資料</div>';
   }catch(e){
     body.innerHTML = errBox(e.message, ()=>openKrtcFacility(stationKey));
