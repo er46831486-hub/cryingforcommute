@@ -97,8 +97,8 @@
   }
   .card-name{font-size:14.5px; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
   .card-sub{font-size:12px; color:var(--sub); margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
-  .gearbtn{background:none; border:none; color:var(--sub); font-size:15px; padding:6px; flex-shrink:0; opacity:.75;}
-  .gearbtn:active{opacity:1;}
+  .gearbtn{background:var(--bg); border:1px solid var(--border); color:var(--sub); font-size:11.5px; font-weight:700; padding:6px 10px; border-radius:8px; flex-shrink:0;}
+  .gearbtn:active{opacity:.6;}
   .card.clickable{cursor:pointer;}
   .card.clickable:active{opacity:.75;}
   .chev{color:var(--sub); font-size:18px; flex-shrink:0;}
@@ -173,8 +173,8 @@
 </div>
 
 <div class="modeSwitch" id="modeSwitch">
-  <button class="modeBtn" data-mode="go">🌅 去程</button>
-  <button class="modeBtn" data-mode="back">🌆 回程</button>
+  <button class="modeBtn" data-mode="go">去程</button>
+  <button class="modeBtn" data-mode="back">回程</button>
 </div>
 <div class="updatedRow" id="updatedRow">載入中…</div>
 
@@ -217,13 +217,13 @@ const TDX_API = 'https://tdx.transportdata.tw/api/basic';
 const TRA_STATIONS = { KAOHSIUNG: '4400', PINGTUNG: '5000' };
 // Direction 1 = 南下(高雄→屏東方向), Direction 0 = 北上(屏東→高雄方向)
 const TRA_DIRECTIONS = {
-  go:   { fromStation: TRA_STATIONS.KAOHSIUNG, direction: 1, label: '高雄 → 屏東' },
-  back: { fromStation: TRA_STATIONS.PINGTUNG,  direction: 0, label: '屏東 → 高雄' }
+  go:   { fromStation: TRA_STATIONS.PINGTUNG,  direction: 0, label: '屏東 → 高雄' },
+  back: { fromStation: TRA_STATIONS.KAOHSIUNG, direction: 1, label: '高雄 → 屏東' }
 };
 
 const KRTC_BY_MODE = {
-  go:   { key:'kstation', name:'高雄車站', stationId:'R11', line:'紅線', lineColor:'#c1443f', headsign:'小港',   note:'紅線，於美麗島可轉橘線往哈瑪星' },
-  back: { key:'hamasen',  name:'哈瑪星',   stationId:'O1',  line:'橘線', lineColor:'#d98a2b', headsign:'大寮',   note:'橘線，於美麗島可轉紅線往高雄車站' }
+  go:   { key:'hamasen',  name:'哈瑪星',   stationId:'O1',  line:'橘線', lineColor:'#d98a2b', headsign:'大寮',   note:'橘線，於美麗島可轉紅線往高雄車站' },
+  back: { key:'kstation', name:'高雄車站', stationId:'R11', line:'紅線', lineColor:'#c1443f', headsign:'小港',   note:'紅線，於美麗島可轉橘線往哈瑪星' }
 };
 const KRTC_ALL_LEGS = [KRTC_BY_MODE.go, KRTC_BY_MODE.back];
 
@@ -276,8 +276,8 @@ function renderModeUI(){
     btn.classList.toggle('active', btn.dataset.mode === currentMode);
   });
   const hints = {
-    go:   '🌅 出發囉，往屏東 / 哈瑪星方向',
-    back: '🌆 收工，往高雄方向回家'
+    go:   '出發囉，往高雄方向',
+    back: '收工，往屏東方向回家'
   };
   document.getElementById('modeHint').textContent = hints[currentMode];
 }
@@ -304,17 +304,55 @@ async function getToken(){
 
 function sleep(ms){ return new Promise(r=>setTimeout(r, ms)); }
 
-async function tdxGet(path, retry){
+// 全站唯一的請求佇列：所有 tdxGet 呼叫（不論來自定時刷新、手動刷新，
+// 還是彈窗裡的查詢）都會被排成一直線，強制間隔發送，
+// 從根本上避免短時間內同時打出多個請求觸發 TDX 的流量限制。
+const REQUEST_GAP_MS = 700;
+let lastRequestAt = 0;
+let requestQueue = Promise.resolve();
+
+function queueRequest(task){
+  const run = async ()=>{
+    const wait = Math.max(0, REQUEST_GAP_MS - (Date.now() - lastRequestAt));
+    if(wait > 0) await sleep(wait);
+    lastRequestAt = Date.now();
+    return task();
+  };
+  const result = requestQueue.then(run, run);
+  requestQueue = result.then(()=>{}, ()=>{}); // 就算失敗也讓佇列繼續往下跑
+  return result;
+}
+
+async function tdxGetRaw(path){
   const token = await getToken();
   const res = await fetch(TDX_API + path + (path.includes('?')?'&':'?') + '$format=JSON', {
     headers:{ Authorization:'Bearer '+token, Accept:'application/json' }
   });
   if(res.status === 429){
-    if(!retry){ await sleep(1500); return tdxGet(path, true); }
-    throw new Error('查詢太頻繁，稍後再試');
+    const err = new Error('查詢太頻繁，稍後再試');
+    err.isRateLimit = true;
+    throw err;
   }
   if(!res.ok) throw new Error('資料取得失敗 ('+res.status+')');
   return res.json();
+}
+
+async function tdxGet(path){
+  return queueRequest(async ()=>{
+    let delay = 1200;
+    for(let attempt=0; attempt<4; attempt++){
+      try{
+        return await tdxGetRaw(path);
+      }catch(e){
+        if(e.isRateLimit && attempt < 3){
+          await sleep(delay);
+          delay *= 2;
+          continue;
+        }
+        throw e;
+      }
+    }
+  });
 }
 
 /* ====================== 小工具 ====================== */
@@ -333,7 +371,7 @@ function errBox(msg, retryFn){
     const b = document.getElementById(id);
     if(b) b.onclick = retryFn;
   }, 0);
-  return `<div class="err">⚠️ ${msg} <button id="${id}">重試</button></div>`;
+  return `<div class="err">發生錯誤：${msg} <button id="${id}">重試</button></div>`;
 }
 
 /* ====================== 台鐵 ====================== */
@@ -473,7 +511,7 @@ async function openKrtcDetail(stationId){
     const trains = (data||[]).sort((a,b)=> a.EstimateTime - b.EstimateTime);
     let html = '';
     if(info && info.StationAddress){
-      html += `<p class="hint">📍 ${info.StationAddress}</p>`;
+      html += `<p class="hint">地址：${info.StationAddress}</p>`;
     }
     html += trains.length ? trains.map(t=>{
       const m = t.EstimateTime;
@@ -511,9 +549,9 @@ function renderBusSkeleton(){
             <div class="card-sub">${picked ? (modeLabel+'站') : '點齒輪設定'}</div>
           </div>
         </div>
-        <div style="display:flex; gap:2px;">
-          <button class="gearbtn" data-route="${r.key}" data-act="edit">⚙️</button>
-          <button class="gearbtn" data-route="${r.key}" data-act="del">🗑️</button>
+        <div style="display:flex; gap:6px;">
+          <button class="gearbtn" data-route="${r.key}" data-act="edit">編輯</button>
+          <button class="gearbtn" data-route="${r.key}" data-act="del">刪除</button>
         </div>
       </div>
       <div class="etalist" id="bus-eta-${r.key}"><div class="skeleton" style="${picked?'':'display:none;'}"></div>${picked?'':'<div class=\"muted\">尚未設定站牌</div>'}</div>
@@ -711,11 +749,9 @@ async function refreshAll(){
   row.textContent = '更新中…';
   document.getElementById('refreshBtn').classList.add('spin');
   try{
-    await loadTRA();
-    await sleep(300);
-    await loadKRTC();
-    await sleep(300);
-    await loadAllBusEta();
+    // 三組請求都會經過 tdxGet 的全站佇列，自動排隊、間隔發送，
+    // 這裡直接平行呼叫即可，不需要再手動加延遲。
+    await Promise.all([ loadTRA(), loadKRTC(), loadAllBusEta() ]);
   } finally {
     isRefreshing = false;
     document.getElementById('refreshBtn').classList.remove('spin');
