@@ -3,6 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
 <meta name="apple-mobile-web-app-title" content="天繃開橘">
 <link rel="apple-touch-icon" href="icon.png">
 <meta name="theme-color" content="#0f172a" media="(prefers-color-scheme: dark)">
@@ -244,6 +247,33 @@
 </div>
 
 <script>
+/* ====================== 自動偵測舊版本、強制更新 ======================
+   iPhone Safari「加入主畫面」的頁面沒有位址列，使用者沒辦法手動下拉重新整理，
+   Safari 又常常把整份 HTML 快取住不重新抓——結果就是主畫面圖示長期停在很舊的版本，
+   之前修好的 bug（例如公車 StopStatus 判斷反了）在他們手機上其實「還沒修好」，
+   因為根本沒抓到新版程式碼。這裡每次打開頁面都會用 no-store 重新跟伺服器要一次
+   最新的 index.html，比對版本字串，不一樣就自動強制重新整理一次拿到最新版，
+   不用使用者自己想辦法清快取。 */
+const APP_VERSION = '2026091702';
+(function selfUpdateCheck(){
+  try{
+    const guardKey = 'appVersionReloadGuard';
+    fetch(location.pathname + '?_v=' + Date.now(), { cache:'no-store' })
+      .then(r=> r.ok ? r.text() : null)
+      .then(html=>{
+        if(!html) return;
+        const m = html.match(/const APP_VERSION = '([^']+)'/);
+        if(!m) return;
+        const latest = m[1];
+        if(latest !== APP_VERSION && sessionStorage.getItem(guardKey) !== latest){
+          sessionStorage.setItem(guardKey, latest); // 避免版本抓取異常時無限重新整理
+          location.reload();
+        }
+      })
+      .catch(()=>{}); // 抓不到就算了，不影響現在這份還能不能動
+  }catch(e){}
+})();
+
 /* ====================== 設定區 ====================== */
 const TDX_CLIENT_ID = 'M144040015-6d10b8c1-4e17-4a74';
 const TDX_CLIENT_SECRET = 'cff4b35c-2152-4564-a5f5-dcd38c8608ec';
