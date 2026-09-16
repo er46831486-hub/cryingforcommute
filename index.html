@@ -475,8 +475,8 @@ let lastTraODByMode = {};
 function fareCodeForTrainType(name){
   if(name.includes('自強') || name.includes('普悠瑪') || name.includes('太魯閣')) return '自';
   if(name.includes('莒光')) return '莒';
-  if(name.includes('復興')) return '復';
-  return '普'; // 區間、區間快等無分等車種
+  if(name.includes('區間') || name.includes('復興')) return '復'; // 區間／區間快目前跟復興號同一票價級距
+  return '普'; // 普快等其餘車種
 }
 function fareForTrainType(fares, trainTypeName){
   if(!fares) return null;
@@ -870,9 +870,16 @@ function renderBusSkeleton(){
   });
 }
 
+// 修正過的判斷邏輯：TDX 文件寫得很清楚——
+// StopStatus=0 是正常狀態且 EstimateTime 一定有值；StopStatus=1 是「尚未發車」，
+// 大多數情況 EstimateTime 是 null（只有少數固定班表路線例外）；StopStatus 2~4 才是真的沒資料。
+// 之前的判斷寫反了（只接受 StopStatus===1），導致最常見的 StopStatus=0 正常資料反而被擋掉，
+// 這就是公車幾乎「查不到即時進站」的真正原因。現在改成：只要有 EstimateTime 或 NextBusTime
+// 任一個有值就顯示，不再用 StopStatus 卡掉正常資料。
 function renderBusEtaBox(box, stop, stale, errMsg){
   if(!box) return;
-  if(!stop || stop.StopStatus!==1 || !stop.NextBusTime){
+  const hasTime = stop && (stop.EstimateTime != null || stop.NextBusTime);
+  if(!hasTime){
     box.innerHTML = '<div class="muted">目前沒有預估到站資訊</div>';
     return;
   }
