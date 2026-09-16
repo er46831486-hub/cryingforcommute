@@ -1056,6 +1056,9 @@ function renderYoubikeCard(stale, errMsg){
     .slice(0,5);
   wrap.innerHTML = nearby.map(({s, dist})=>{
     const a = availByUid[s.StationUID];
+    const detail = a && a.AvailableRentBikesDetail;
+    const general = detail ? detail.GeneralBikes : null;
+    const electric = detail ? detail.ElectricBikes : null;
     const rent = a ? a.AvailableRentBikes : null;
     const ret = a ? a.AvailableReturnBikes : null;
     const distLabel = dist < 1000 ? Math.round(dist)+' 公尺' : (dist/1000).toFixed(1)+' 公里';
@@ -1069,7 +1072,8 @@ function renderYoubikeCard(stale, errMsg){
         </div>
       </div>
       <div class="etalist">
-        <div class="eta"><div class="min ${rent>0?'soon':'late'}">${rent==null?'—':rent}</div><div class="cap">可借車輛</div></div>
+        <div class="eta"><div class="min ${general>0?'soon':'late'}">${general==null?(rent==null?'—':rent):general}</div><div class="cap">一般車</div></div>
+        <div class="eta"><div class="min ${electric>0?'soon':'late'}">${electric==null?'—':electric}</div><div class="cap">電輔車</div></div>
         <div class="eta"><div class="min">${ret==null?'—':ret}</div><div class="cap">可還空位</div></div>
       </div>
     </div>`;
@@ -1143,6 +1147,10 @@ function renderStopPickerList(data, routeKey, mode){
   });
 }
 
+// 防止連點：同一條路線如果已經有一個請求在飛，重複點擊不會再送出第二個，
+// 只會沿用正在跑的那一個，等它回來就好——這是「設定站牌時查詢過多」的主要成因之一。
+let stopPickerInFlightKey = null;
+
 async function openStopPicker(routeKey){
   const route = getBusRoutes().find(r=>r.key===routeKey);
   const mode = getMode();
@@ -1161,14 +1169,24 @@ async function openStopPicker(routeKey){
   } else {
     body.innerHTML = '<div class="muted">載入中…</div>';
   }
+
+  if(stopPickerInFlightKey === routeKey) return; // 同一條路線已經有請求在跑，不要再送第二個
+  stopPickerInFlightKey = routeKey;
   try{
     const filter = encodeURIComponent(`RouteName/Zh_tw eq '${route.name}'`);
     const data = await tdxGet(`/v2/Bus/EstimatedTimeOfArrival/City/Kaohsiung?$filter=${filter}`, 'high');
     saveCache(cacheKey, data);
-    renderStopPickerList(data, routeKey, mode);
+    // 拿到資料時使用者可能已經切去看別條路線了，這種情況只更新快取，不要蓋掉畫面。
+    if(document.getElementById('sheetTitle').textContent.startsWith(route.name)){
+      renderStopPickerList(data, routeKey, mode);
+    }
   }catch(e){
-    if(!cached){ body.innerHTML = errBox(e.message, ()=>openStopPicker(routeKey)); }
+    if(!cached && document.getElementById('sheetTitle').textContent.startsWith(route.name)){
+      body.innerHTML = errBox(e.message, ()=>openStopPicker(routeKey));
+    }
     // 有快取的話就維持已經畫出來的清單，站牌名單本來就很少變動，不用特別顯示錯誤打擾使用者。
+  } finally {
+    if(stopPickerInFlightKey === routeKey) stopPickerInFlightKey = null;
   }
 }
 
@@ -1288,11 +1306,11 @@ renderAll();
 refreshAll();
 autoLocateYouBike(); // 打開網頁就自動要求定位，不用使用者按按鈕
 
-// 每 20 秒觸發一次，但畫面不在前景（螢幕鎖定、切到別的 App）時跳過，
-// 不浪費 TDX 的每月查詢額度；回到前景會立刻補一次最新資料。
+// 每 20 秒觸發一次，但畫面不在前景、或使用者正打開某個彈窗（例如選站牌）時跳過——
+// 使用者正在等的操作已經走 high 優先權排到最前面了，背景這輪就不要再去搶額度、拖累它。
 const AUTO_REFRESH_MS = 20000;
 setInterval(()=>{
-  if(document.visibilityState === 'visible') refreshAll();
+  if(document.visibilityState === 'visible' && !overlay.classList.contains('show')) refreshAll();
 }, AUTO_REFRESH_MS);
 document.addEventListener('visibilitychange', ()=>{
   if(document.visibilityState === 'visible') refreshAll();
