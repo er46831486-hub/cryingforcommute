@@ -93,25 +93,31 @@
   /* ---- hero (TRA) ---- */
   .hero{
     background:var(--card); border:1px solid var(--border); border-radius:var(--radius-lg);
-    padding:18px; margin-bottom:8px; box-shadow:var(--shadow); position:relative;
+    padding:18px 18px 16px; margin-bottom:8px; box-shadow:var(--shadow); position:relative;
     border-left:4px solid var(--accent);
   }
   .hero-label{font-size:11.5px; font-weight:800; color:var(--accent); letter-spacing:.5px; text-transform:uppercase;}
-  .hero-route{font-size:19px; font-weight:800; margin-top:3px;}
-  .hero-trains{margin-top:14px; display:flex; flex-direction:column; gap:8px;}
+  .hero-route{font-size:20px; font-weight:800; margin-top:2px; letter-spacing:.2px;}
+  .hero-trains{margin-top:15px; display:flex; flex-direction:column; gap:9px;}
   .hero-train{
     display:flex; justify-content:space-between; align-items:center;
-    background:var(--bg); border:1px solid var(--border); border-radius:var(--radius-sm); padding:11px 13px 11px 10px;
-    cursor:pointer; border-left:4px solid var(--sub);
+    background:var(--bg); border:1px solid var(--border); border-radius:var(--radius-sm); padding:12px 14px 12px 11px;
+    cursor:pointer; border-left:4px solid var(--sub); transition:background .12s;
   }
-  .hero-train:active{opacity:.65;}
+  .hero-train:active{opacity:.6;}
   .tt-express{ border-left-color:#c9622c; }
   .tt-fast{ border-left-color:#3a8f9e; }
   .tt-local{ border-left-color:#3a8f5c; }
-  .hero-train .l{font-size:13.5px; font-weight:600;}
-  .hero-train .l small{display:block; font-size:11.5px; color:var(--sub); font-weight:500; margin-top:2px;}
-  .hero-train .r{font-size:19px; font-weight:800; text-align:right; font-variant-numeric:tabular-nums; color:var(--accent);}
+  .hero-train .l{font-size:13.5px; font-weight:600; min-width:0;}
+  .ttRow{display:flex; align-items:center; gap:7px; flex-wrap:wrap;}
+  .hero-train .l small{display:block; font-size:11.5px; color:var(--sub); font-weight:500; margin-top:4px;}
+  .hero-train .r{font-size:19.5px; font-weight:800; text-align:right; font-variant-numeric:tabular-nums; color:var(--accent); flex-shrink:0; margin-left:10px;}
   .hero-empty{margin-top:14px; font-size:13px; color:var(--sub);}
+  .delayBadge{
+    font-size:10px; font-weight:800; padding:2px 7px; border-radius:6px; letter-spacing:.2px;
+  }
+  .delayBadge.ontime{ background:var(--accent-soft); color:var(--good); }
+  .delayBadge.late{ background:var(--accent-soft); color:var(--bad); }
 
   /* ---- generic card ---- */
   .card{
@@ -145,14 +151,16 @@
   .card.addroute:active{opacity:.6;}
 
   .etalist{display:flex; gap:8px; margin-top:11px; flex-wrap:wrap;}
+  /* 固定寬度，不再依內容（例如站名長短）自動撐大——每個到站方塊統一以最寬的情況為準，
+     視覺上才會整齊對齊，不會有些方塊看起來比較大、有些比較小。 */
   .eta{
     background:var(--bg); border:1px solid var(--border); border-radius:var(--radius-sm);
-    padding:9px 12px; min-width:64px; text-align:center;
+    padding:9px 10px; width:78px; box-sizing:border-box; text-align:center; flex-shrink:0;
   }
-  .eta .min{font-size:17px; font-weight:800; color:var(--accent); font-variant-numeric:tabular-nums;}
+  .eta .min{font-size:17px; font-weight:800; color:var(--accent); font-variant-numeric:tabular-nums; line-height:1.2;}
   .eta .min.soon{color:var(--good);}
   .eta .min.late{color:var(--sub);}
-  .eta .cap{font-size:10.5px; color:var(--sub); margin-top:2px;}
+  .eta .cap{font-size:10.5px; color:var(--sub); margin-top:2px; white-space:normal; line-height:1.25;}
 
   .muted{color:var(--sub); font-size:13px; padding:8px 2px;}
   .err{color:var(--bad); font-size:12.5px; padding:8px 2px; display:flex; align-items:center; gap:8px; flex-wrap:wrap;}
@@ -262,7 +270,7 @@
    因為根本沒抓到新版程式碼。這裡每次打開頁面都會用 no-store 重新跟伺服器要一次
    最新的 index.html，比對版本字串，不一樣就自動強制重新整理一次拿到最新版，
    不用使用者自己想辦法清快取。 */
-const APP_VERSION = '2026091704';
+const APP_VERSION = '2026091707';
 (function selfUpdateCheck(){
   try{
     const guardKey = 'appVersionReloadGuard';
@@ -303,10 +311,10 @@ const KRTC_STATIONS = [
   { key:'kstation', name:'高雄車站', ids:['R11'],      line:'紅線' }
 ];
 const KRTC_ALL_STATION_IDS = KRTC_STATIONS.flatMap(s=>s.ids);
-// 去程由左至右：高雄車站→美麗島→哈瑪星；回程反過來。
+// 去程不需要哈瑪星、回程不需要高雄車站，各自只留兩個真正用得到的分頁。
 const KRTC_ORDER = {
-  go:   ['kstation','meilidao','hamasen'],
-  back: ['hamasen','meilidao','kstation']
+  go:   ['kstation','meilidao'],
+  back: ['hamasen','meilidao']
 };
 function krtcStationsInOrder(){
   return KRTC_ORDER[getMode()].map(k=>KRTC_STATIONS.find(s=>s.key===k));
@@ -532,13 +540,19 @@ async function ensureTraFare(mode, priority){
   return fares;
 }
 async function ensureTraOD(mode, priority){
-  const cfg = TRA_DIRECTIONS[mode];
   const today = new Date().toISOString().slice(0,10);
-  const key = 'traOD_'+mode+'_'+today;
+  const data = await fetchTraODForDate(mode, today, priority);
+  lastTraODByMode[mode] = data;
+  return data;
+}
+// 給「自訂時間往後查詢」用：可以指定任意日期，跟 ensureTraOD（永遠查今天、給即時卡片用）分開，
+// 不會互相污染快取內容。日期相同時共用同一份快取，不會重複打 API。
+async function fetchTraODForDate(mode, date, priority){
+  const cfg = TRA_DIRECTIONS[mode];
+  const key = 'traOD_'+mode+'_'+date;
   const cached = loadCache(key);
-  if(cached){ lastTraODByMode[mode] = cached; return cached; }
-  const data = await tdxGet(`/v2/Rail/TRA/DailyTimetable/OD/${cfg.fromStation}/to/${cfg.toStation}/${today}`, priority);
-  lastTraODByMode[mode] = data || [];
+  if(cached) return cached;
+  const data = await tdxGet(`/v2/Rail/TRA/DailyTimetable/OD/${cfg.fromStation}/to/${cfg.toStation}/${date}`, priority);
   saveCache(key, data || []);
   return data || [];
 }
@@ -555,6 +569,17 @@ function enrichTraInBackground(mode){
   }).catch(()=>{});
 }
 
+// 車種原始名稱常常有一堆備註，例如「自強(推拉式自強號且有自行車車廂)」「自強(3000)(EMU3000 型電車)」，
+// 但保留簡短的車型代號（例如「(3000)」「(PP)」）比全部拿掉更有辨識度——
+// 推拉式自強號縮寫成「PP」是台鐵迷慣用的稱呼。分類判斷（trainTypeClass／fareCodeForTrainType）
+// 仍然吃未處理過的原始名稱，因為關鍵字都在括號「之前」，不受影響。
+function cleanTrainTypeName(name){
+  const base = name.split('(')[0].trim();
+  const groups = [...name.matchAll(/\(([^)]*)\)/g)].map(m=>m[1]);
+  let tag = groups.find(g=> /^\d+$/.test(g)); // 純數字車型代號，例如「3000」
+  if(!tag && groups.some(g=> g.includes('推拉'))) tag = 'PP';
+  return tag ? `${base}(${tag})` : base;
+}
 // 簡約豎槓分色：自強(含普悠瑪/太魯閣) / 區間快 / 區間，其餘車種用預設中性色。
 function trainTypeClass(name){
   if(name.includes('自強') || name.includes('普悠瑪') || name.includes('太魯閣')) return 'tt-express';
@@ -582,14 +607,17 @@ function renderTraTrains(trains, stale, errMsg){
   const mode = getMode();
   const fares = lastTraFareByMode[mode];
   el.innerHTML = trains.map(t=>{
-    const delay = t.DelayTime>0 ? `誤點 ${t.DelayTime} 分` : '準點';
+    const delayBadge = t.DelayTime>0
+      ? `<span class="delayBadge late">誤點${t.DelayTime}分</span>`
+      : `<span class="delayBadge ontime">準點</span>`;
     const price = fareForTrainType(fares, t.TrainTypeName.Zh_tw);
     const dep = t.ScheduledDepartureTime.slice(0,5);
     const arr = findArrivalTime(mode, t.TrainNo);
     const duration = formatDuration(dep, arr);
-    const bits = [delay, price!=null?('$'+price):null, arr?('抵達 '+arr):null, duration?('車程 '+duration):null].filter(Boolean).join(' · ');
+    const bits = [price!=null?('$'+price):null, arr?('抵達 '+arr):null, duration?('車程 '+duration):null].filter(Boolean).join(' · ');
     return `<div class="hero-train ${trainTypeClass(t.TrainTypeName.Zh_tw)}" data-trainno="${t.TrainNo}">
-      <div class="l">${t.TrainTypeName.Zh_tw} ${t.TrainNo}
+      <div class="l">
+        <div class="ttRow">${cleanTrainTypeName(t.TrainTypeName.Zh_tw)} ${t.TrainNo} ${delayBadge}</div>
         <small>${bits}</small>
       </div>
       <div class="r">${dep}</div>
@@ -652,11 +680,14 @@ async function openTraRangePicker(){
   document.getElementById('sheetTitle').textContent = cfg.label + '｜指定時間往後查詢';
   const hint = document.getElementById('sheetHint');
   hint.style.display = 'block';
-  hint.textContent = `輸入一個時間，列出這之後最近 ${TRA_FORWARD_LIMIT} 班車。這裡查的是當天排定時刻表，僅供規劃參考，不包含即時誤點資訊。`;
+  hint.textContent = `選擇日期與時間，列出這之後最近 ${TRA_FORWARD_LIMIT} 班車。這裡查的是排定時刻表，僅供規劃參考，不包含即時誤點資訊。`;
   const body = document.getElementById('sheetBody');
-  const nowHHMM = new Date().toTimeString().slice(0,5);
+  const now = new Date();
+  const nowHHMM = now.toTimeString().slice(0,5);
+  const todayStr = now.toISOString().slice(0,10);
   body.innerHTML = `
     <div class="timeRow">
+      <input type="date" id="rangeDate" value="${todayStr}" style="flex:1.2;">
       <input type="time" id="rangeFrom" value="${nowHHMM}" style="flex:1;">
     </div>
     <button class="fullBtn" id="rangeSearchBtn">查詢這個時間之後的班次</button>
@@ -665,12 +696,13 @@ async function openTraRangePicker(){
   overlay.classList.add('show');
   const mode = getMode();
   const doForwardSearch = async ()=>{
+    const date = document.getElementById('rangeDate').value;
     const from = document.getElementById('rangeFrom').value;
     const results = document.getElementById('rangeResults');
-    if(!from){ results.innerHTML = '<div class="muted">請選擇時間</div>'; return; }
+    if(!date || !from){ results.innerHTML = '<div class="muted">請選擇日期與時間</div>'; return; }
     results.innerHTML = '<div class="muted">查詢中…</div>';
     try{
-      const [data, fares] = await Promise.all([ ensureTraOD(mode, 'high'), ensureTraFare(mode, 'high') ]);
+      const [data, fares] = await Promise.all([ fetchTraODForDate(mode, date, 'high'), ensureTraFare(mode, 'high') ]);
       const list = (data||[])
         .filter(t=> t.OriginStopTime.DepartureTime.slice(0,5) >= from)
         .sort((a,b)=> a.OriginStopTime.DepartureTime.localeCompare(b.OriginStopTime.DepartureTime))
@@ -684,7 +716,7 @@ async function openTraRangePicker(){
         const duration = formatDuration(depT, arrT);
         return `<div class="stopitem ${trainTypeClass(info.TrainTypeName.Zh_tw)}" style="border-left-width:4px; border-left-style:solid; padding-left:10px;">
           <div>
-            <div class="n">${info.TrainTypeName.Zh_tw} ${info.TrainNo}</div>
+            <div class="n">${cleanTrainTypeName(info.TrainTypeName.Zh_tw)} ${info.TrainNo}</div>
             <div class="d">抵達 ${arrT}${duration?(' · 車程 '+duration):''}${price!=null?(' · $'+price):''}</div>
           </div>
           <div style="font-weight:800; color:var(--accent);">${depT}</div>
@@ -713,7 +745,7 @@ async function openTrainDetail(trainNo){
     const arrT = entry.DestinationStopTime.ArrivalTime.slice(0,5);
     const duration = formatDuration(depT, arrT);
     body.innerHTML = `
-      <div class="stopitem ${trainTypeClass(info.TrainTypeName.Zh_tw)}" style="border-left-width:4px; border-left-style:solid; padding-left:10px;"><div><div class="n">車種／車次</div></div><div style="font-weight:800;">${info.TrainTypeName.Zh_tw} ${trainNo}</div></div>
+      <div class="stopitem ${trainTypeClass(info.TrainTypeName.Zh_tw)}" style="border-left-width:4px; border-left-style:solid; padding-left:10px;"><div><div class="n">車種／車次</div></div><div style="font-weight:800;">${cleanTrainTypeName(info.TrainTypeName.Zh_tw)} ${trainNo}</div></div>
       <div class="stopitem"><div><div class="n">上車時間</div><div class="d">${entry.OriginStopTime.StationName.Zh_tw}</div></div><div style="font-weight:800; color:var(--accent);">${depT}</div></div>
       <div class="stopitem"><div><div class="n">抵達時間</div><div class="d">${entry.DestinationStopTime.StationName.Zh_tw}</div></div><div style="font-weight:800; color:var(--accent);">${arrT}</div></div>
       ${duration ? `<div class="stopitem"><div><div class="n">行車時間</div></div><div style="font-weight:800;">${duration}</div></div>` : ''}
@@ -756,8 +788,11 @@ function renderKrtcSkeleton(){
   const wrap = document.getElementById('krtcCards');
   wrap.innerHTML = `
     <div class="card" id="krtc-card">
-      <div class="krtcTabs" id="krtcTabs">
-        ${krtcStationsInOrder().map(s=>`<button class="krtcTabBtn" data-st="${s.key}">${s.name}</button>`).join('')}
+      <div style="display:flex; gap:8px; align-items:center;">
+        <div class="krtcTabs" id="krtcTabs" style="flex:1;">
+          ${krtcStationsInOrder().map(s=>`<button class="krtcTabBtn" data-st="${s.key}">${s.name}</button>`).join('')}
+        </div>
+        <button class="gearbtn" id="krtcFacilityBtn">站內設施</button>
       </div>
       <div class="card-head clickable" id="krtcHead" style="margin-top:12px;">
         <div class="card-title">
@@ -781,8 +816,54 @@ function renderKrtcSkeleton(){
     };
   });
   document.getElementById('krtcHead').onclick = ()=> openKrtcDetail(selectedKrtcStation);
+  document.getElementById('krtcFacilityBtn').onclick = ()=> openKrtcFacility(selectedKrtcStation);
   renderKrtcTabsUI();
   renderKrtcFromCache(); // 第 1 層：有快取就先畫出來，不用等這次的網路請求
+}
+
+// 車站設施（廁所／飲水機／電梯／詢問處）幾乎不會變動，快取 30 天。
+// 注意：TDX 這份資料沒有提供超商位置，所以清單裡不會有超商這一項。
+const KRTC_FACILITY_TTL = 30*24*3600*1000;
+async function ensureKrtcFacility(stationIds, priority){
+  const key = 'krtcFacility_'+stationIds.join('_');
+  const cached = loadCache(key, KRTC_FACILITY_TTL);
+  if(cached) return cached;
+  const filter = stationIds.map(id=>`StationID eq '${id}'`).join(' or ');
+  const data = await tdxGet(`/v2/Rail/Metro/StationFacility/KRTC?$filter=${encodeURIComponent(filter)}`, priority);
+  saveCache(key, data || []);
+  return data || [];
+}
+async function openKrtcFacility(stationKey){
+  const st = KRTC_STATIONS.find(s=>s.key===stationKey);
+  document.getElementById('sheetTitle').textContent = st.name + ' 站內設施';
+  document.getElementById('sheetHint').style.display = 'none';
+  const body = document.getElementById('sheetBody');
+  body.innerHTML = '<div class="muted">載入中…</div>';
+  overlay.classList.add('show');
+  try{
+    const data = await ensureKrtcFacility(st.ids, 'high');
+    const cats = [
+      { key:'Toilets', label:'廁所' },
+      { key:'DrinkingFountains', label:'飲水機' },
+      { key:'Elevators', label:'無障礙電梯' },
+      { key:'InformationSpots', label:'詢問處' }
+    ];
+    let html = '';
+    cats.forEach(cat=>{
+      const items = data.flatMap(d=> d[cat.key] || []);
+      if(!items.length) return;
+      html += `<div class="section-title" style="margin-top:14px;">${cat.label}</div>`;
+      html += items.map(it=>`<div class="stopitem"><div><div class="n">${it.Description||''}</div>${it.FloorLevel?`<div class="d">樓層 ${it.FloorLevel}</div>`:''}</div></div>`).join('');
+    });
+    const maps = data.flatMap(d=> d.FacilityMapURLs || []);
+    if(maps.length){
+      html += `<div class="section-title" style="margin-top:14px;">站內平面圖</div>`;
+      html += maps.map(m=>`<a href="${m.MapURL}" target="_blank" rel="noopener" style="display:block; padding:10px 2px; color:var(--accent); font-weight:700; font-size:13.5px;">${m.MapName.Zh_tw} →</a>`).join('');
+    }
+    body.innerHTML = html || '<div class="muted">查無此站設施資料</div>';
+  }catch(e){
+    body.innerHTML = errBox(e.message, ()=>openKrtcFacility(stationKey));
+  }
 }
 
 function renderKrtcTabsUI(){
@@ -1369,7 +1450,37 @@ function hydrateFromCache(){
   userGeo = loadCache('youbikeGeo', 30*60*1000) || null; // 定位快取只留 30 分鐘，太久沒重新定位怕位置不準
 }
 
+// 使用者指定的固定站牌（去程一律捷運哈瑪星站出口1；回程依路線分別停靠中山大學行政大樓／隧道口）。
+// 用版本字串控制只套用一次：套用過的瀏覽器不會被重複覆蓋，之後使用者自己改的站牌不會被蓋掉；
+// 之後如果要再次強制套用新的固定站牌，把 BUS_STOP_PRESETS_VERSION 往上跳一版即可。
+const BUS_STOP_PRESETS_VERSION = 'v1';
+const BUS_STOP_PRESETS = {
+  go: {
+    o1:  { StopUID:'KHH100901143241', StopName:'捷運哈瑪星站(出口1)(輕軌哈瑪星站)', seq:2 },
+    o1e: { StopUID:'KHH109011143241', StopName:'捷運哈瑪星站(出口1)(輕軌哈瑪星站)', seq:2 },
+    r52: { StopUID:'KHH10085215981',  StopName:'捷運哈瑪星站(出口1)(輕軌哈瑪星站)', seq:16 },
+    w50: { StopUID:'KHH10005090721',  StopName:'捷運哈瑪星站(出口1)(輕軌哈瑪星站)', seq:24 }
+  },
+  back: {
+    o1:  { StopUID:'KHH10090131852',  StopName:'中山大學行政大樓', seq:6 },
+    o1e: { StopUID:'KHH10901131852',  StopName:'中山大學行政大樓', seq:6 },
+    r52: { StopUID:'KHH100852190122', StopName:'中山大學行政大樓', seq:1 },
+    w50: { StopUID:'KHH10005018431',  StopName:'中山大學(隧道口)', seq:26 }
+  }
+};
+function applyBusStopPresetsOnce(){
+  const key = 'busPresetsApplied';
+  if(localStorage.getItem(key) === BUS_STOP_PRESETS_VERSION) return;
+  ['go','back'].forEach(mode=>{
+    Object.keys(BUS_STOP_PRESETS[mode]).forEach(routeKey=>{
+      setPickedStop(routeKey, mode, BUS_STOP_PRESETS[mode][routeKey]);
+    });
+  });
+  localStorage.setItem(key, BUS_STOP_PRESETS_VERSION);
+}
+
 hydrateFromCache();
+applyBusStopPresetsOnce();
 injectIcons();
 renderModeUI();
 renderTraFromCache();
