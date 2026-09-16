@@ -64,6 +64,11 @@
   /* ---- section ---- */
   .section-title{font-size:12.5px; font-weight:800; color:var(--sub); margin:20px 2px 8px; letter-spacing:.4px; text-transform:uppercase;}
 
+  /* ---- krtc station tabs ---- */
+  .krtcTabs{ display:flex; background:var(--bg); border:1px solid var(--border); border-radius:12px; padding:3px; gap:3px; }
+  .krtcTabBtn{ flex:1; border:none; background:transparent; color:var(--sub); font-weight:700; font-size:12.5px; padding:8px 4px; border-radius:9px; }
+  .krtcTabBtn.active{ background:var(--card); color:var(--text); box-shadow:var(--shadow); }
+
   /* ---- hero (TRA) ---- */
   .hero{
     background:var(--card); border:1px solid var(--border); border-radius:var(--radius-lg);
@@ -101,6 +106,8 @@
   .gearbtn:active{opacity:.6;}
   .card.clickable{cursor:pointer;}
   .card.clickable:active{opacity:.75;}
+  .clickable{cursor:pointer;}
+  .clickable:active{opacity:.7;}
   .chev{color:var(--sub); font-size:18px; flex-shrink:0;}
   .card.addroute{cursor:pointer; text-align:center; border-style:dashed; color:var(--accent); font-weight:700; font-size:14px;}
   .card.addroute:active{opacity:.6;}
@@ -194,7 +201,7 @@
 <div id="busCards"></div>
 
 <div class="footer">
-  資料來源：TDX 運輸資料流通服務平臺<br>每 45 秒自動更新 · 點卡片看更多細節
+  資料來源：TDX 運輸資料流通服務平臺<br>每 10 秒自動更新（背景時暫停）· 點卡片看更多細節
 </div>
 
 <!-- Shared bottom sheet modal -->
@@ -221,11 +228,18 @@ const TRA_DIRECTIONS = {
   back: { fromStation: TRA_STATIONS.KAOHSIUNG, direction: 1, label: '高雄 → 屏東' }
 };
 
-const KRTC_BY_MODE = {
-  go:   { key:'hamasen',  name:'哈瑪星',   stationId:'O1',  line:'橘線', lineColor:'#d98a2b', headsign:'大寮',   note:'橘線，於美麗島可轉紅線往高雄車站' },
-  back: { key:'kstation', name:'高雄車站', stationId:'R11', line:'紅線', lineColor:'#c1443f', headsign:'小港',   note:'紅線，於美麗島可轉橘線往哈瑪星' }
-};
-const KRTC_ALL_LEGS = [KRTC_BY_MODE.go, KRTC_BY_MODE.back];
+// 不分去程／回程，哈瑪星、美麗島、高雄車站三站都能選。
+// 美麗島是橘線／紅線的轉乘站，橘線那側叫 O5、紅線那側叫 R10，兩個 ID 都要查才會抓到雙線的班次。
+const KRTC_STATIONS = [
+  { key:'hamasen',  name:'哈瑪星',   ids:['O1'],       line:'橘線' },
+  { key:'meilidao', name:'美麗島',   ids:['O5','R10'], line:'橘線・紅線' },
+  { key:'kstation', name:'高雄車站', ids:['R11'],      line:'紅線' }
+];
+const KRTC_ALL_STATION_IDS = KRTC_STATIONS.flatMap(s=>s.ids);
+function krtcDefaultStation(){
+  return getMode()==='go' ? 'hamasen' : 'kstation';
+}
+let selectedKrtcStation = 'hamasen'; // 會在 currentMode 初始化後由 krtcDefaultStation() 校正
 
 const DEFAULT_BUS_ROUTES = [
   { key:'o1',  name:'橘1',      tag:'橘1',   color:'#d98a2b' },
@@ -264,9 +278,11 @@ function autoDetectMode(){
   return h < 13 ? 'go' : 'back';
 }
 let currentMode = autoDetectMode();
+selectedKrtcStation = krtcDefaultStation();
 function getMode(){ return currentMode; }
 function setMode(m){
   currentMode = m;
+  selectedKrtcStation = krtcDefaultStation();
   renderModeUI();
   renderAll();
   refreshAll();
@@ -435,18 +451,25 @@ async function openTrainDetail(trainNo){
 /* ====================== 高雄捷運 ====================== */
 // 注意：KRTC LiveBoard 的 EstimateTime 單位是「分鐘」，不是秒。
 function krtcMinuteLabel(m){ return m<=0 ? '進站' : m+'分'; }
+const KRTC_TAG_COLOR = { hamasen:'#d98a2b', meilidao:'#7c6fae', kstation:'#c1443f' };
+
+// 三站的即時到站資料只會用「一次」API 請求全部抓回來，
+// 之後在哈瑪星／美麗島／高雄車站之間切換分頁完全不用再打 API。
+let lastKrtcData = null;
 
 function renderKrtcSkeleton(){
   const wrap = document.getElementById('krtcCards');
-  const leg = KRTC_BY_MODE[getMode()];
   wrap.innerHTML = `
-    <div class="card clickable" id="krtc-card" data-station="${leg.stationId}">
-      <div class="card-head">
+    <div class="card" id="krtc-card">
+      <div class="krtcTabs" id="krtcTabs">
+        ${KRTC_STATIONS.map(s=>`<button class="krtcTabBtn" data-st="${s.key}">${s.name}</button>`).join('')}
+      </div>
+      <div class="card-head clickable" id="krtcHead" style="margin-top:12px;">
         <div class="card-title">
-          <span class="tag" style="background:${leg.lineColor}">${leg.line}</span>
+          <span class="tag" id="krtcTag"></span>
           <div>
-            <div class="card-name">${leg.name} 站</div>
-            <div class="card-sub">${leg.note}</div>
+            <div class="card-name" id="krtcStationName"></div>
+            <div class="card-sub">點看站點時刻表與地址</div>
           </div>
         </div>
         <span class="chev">›</span>
@@ -454,31 +477,60 @@ function renderKrtcSkeleton(){
       <div class="etalist" id="krtc-eta"><div class="skeleton"></div></div>
     </div>
   `;
-  document.getElementById('krtc-card').onclick = ()=> openKrtcDetail(leg.stationId);
+  document.querySelectorAll('.krtcTabBtn').forEach(btn=>{
+    btn.onclick = (e)=>{
+      e.stopPropagation();
+      selectedKrtcStation = btn.dataset.st;
+      renderKrtcTabsUI();
+      renderKrtcFromCache();
+    };
+  });
+  document.getElementById('krtcHead').onclick = ()=> openKrtcDetail(selectedKrtcStation);
+  renderKrtcTabsUI();
+}
+
+function renderKrtcTabsUI(){
+  document.querySelectorAll('.krtcTabBtn').forEach(btn=>{
+    btn.classList.toggle('active', btn.dataset.st === selectedKrtcStation);
+  });
+  const st = KRTC_STATIONS.find(s=>s.key===selectedKrtcStation);
+  const tag = document.getElementById('krtcTag');
+  tag.textContent = st.line;
+  tag.style.background = KRTC_TAG_COLOR[st.key];
+  document.getElementById('krtcStationName').textContent = st.name + ' 站';
+}
+
+function renderKrtcFromCache(){
+  const box = document.getElementById('krtc-eta');
+  if(!box) return;
+  if(!lastKrtcData){ box.innerHTML = '<div class="skeleton"></div>'; return; }
+  const st = KRTC_STATIONS.find(s=>s.key===selectedKrtcStation);
+  const trains = lastKrtcData.filter(t=> st.ids.includes(t.StationID));
+  const byHead = {};
+  trains.forEach(t=>{
+    if(!(t.TripHeadSign in byHead) || t.EstimateTime < byHead[t.TripHeadSign].EstimateTime){
+      byHead[t.TripHeadSign] = t;
+    }
+  });
+  const list = Object.values(byHead).sort((a,b)=> a.EstimateTime - b.EstimateTime);
+  if(!list.length){ box.innerHTML = '<div class="muted">目前沒有班次資訊</div>'; return; }
+  box.innerHTML = list.map(t=>{
+    const m = t.EstimateTime; // 已經是分鐘
+    return `<div class="eta">
+      <div class="min ${etaClass(m)}">${krtcMinuteLabel(m)}</div>
+      <div class="cap">${t.TripHeadSign}</div>
+    </div>`;
+  }).join('');
 }
 
 async function loadKRTC(){
-  const leg = KRTC_BY_MODE[getMode()];
   const box = document.getElementById('krtc-eta');
   if(!box) return;
   try{
-    const data = await tdxGet(`/v2/Rail/Metro/LiveBoard/KRTC?$filter=${encodeURIComponent(`StationID eq '${leg.stationId}'`)}`);
-    const trains = (data||[]).filter(t=> t.StationID===leg.stationId);
-    const byHead = {};
-    trains.forEach(t=>{
-      if(!(t.TripHeadSign in byHead) || t.EstimateTime < byHead[t.TripHeadSign].EstimateTime){
-        byHead[t.TripHeadSign] = t;
-      }
-    });
-    const list = Object.values(byHead).sort((a,b)=> a.EstimateTime - b.EstimateTime);
-    if(!list.length){ box.innerHTML = '<div class="muted">目前沒有班次資訊</div>'; return; }
-    box.innerHTML = list.map(t=>{
-      const m = t.EstimateTime; // 已經是分鐘
-      return `<div class="eta">
-        <div class="min ${etaClass(m)}">${krtcMinuteLabel(m)}</div>
-        <div class="cap">${t.TripHeadSign}</div>
-      </div>`;
-    }).join('');
+    const filter = KRTC_ALL_STATION_IDS.map(id=>`StationID eq '${id}'`).join(' or ');
+    const data = await tdxGet(`/v2/Rail/Metro/LiveBoard/KRTC?$filter=${encodeURIComponent(filter)}`);
+    lastKrtcData = data || [];
+    renderKrtcFromCache();
   }catch(e){
     box.innerHTML = errBox(e.message, loadKRTC);
   }
@@ -496,33 +548,30 @@ async function getKrtcStationInfo(stationId){
   return info;
 }
 
-async function openKrtcDetail(stationId){
-  const leg = KRTC_ALL_LEGS.find(l=>l.stationId===stationId);
-  document.getElementById('sheetTitle').textContent = (leg?leg.name:stationId) + ' 站資訊';
+async function openKrtcDetail(stationKey){
+  const st = KRTC_STATIONS.find(s=>s.key===stationKey);
+  document.getElementById('sheetTitle').textContent = st.name + ' 站資訊';
   document.getElementById('sheetHint').style.display = 'none';
   const body = document.getElementById('sheetBody');
   body.innerHTML = '<div class="muted">載入中…</div>';
   overlay.classList.add('show');
   try{
-    const [info, data] = await Promise.all([
-      getKrtcStationInfo(stationId),
-      tdxGet(`/v2/Rail/Metro/LiveBoard/KRTC?$filter=${encodeURIComponent(`StationID eq '${stationId}'`)}`)
-    ]);
-    const trains = (data||[]).sort((a,b)=> a.EstimateTime - b.EstimateTime);
+    // 站點資訊有本機快取；到站時刻直接沿用最近一次抓到的資料，不額外打 API。
+    const infos = await Promise.all(st.ids.map(getKrtcStationInfo));
+    const trains = (lastKrtcData||[]).filter(t=> st.ids.includes(t.StationID)).sort((a,b)=> a.EstimateTime - b.EstimateTime);
     let html = '';
-    if(info && info.StationAddress){
-      html += `<p class="hint">地址：${info.StationAddress}</p>`;
-    }
+    const addr = infos.find(i=>i && i.StationAddress);
+    if(addr) html += `<p class="hint">地址：${addr.StationAddress}</p>`;
     html += trains.length ? trains.map(t=>{
       const m = t.EstimateTime;
       return `<div class="stopitem">
         <div><div class="n">${t.TripHeadSign}</div><div class="d">${(t.LineName&&t.LineName.Zh_tw)||''}</div></div>
         <div style="font-weight:800; color:var(--accent);">${krtcMinuteLabel(m)}</div>
       </div>`;
-    }).join('') : '<div class="muted">目前沒有班次資訊</div>';
+    }).join('') : '<div class="muted">目前沒有班次資訊，請先按重新整理</div>';
     body.innerHTML = html;
   }catch(e){
-    body.innerHTML = errBox(e.message, ()=>openKrtcDetail(stationId));
+    body.innerHTML = errBox(e.message, ()=>openKrtcDetail(stationKey));
   }
 }
 
@@ -768,7 +817,16 @@ document.querySelectorAll('.modeBtn').forEach(btn=>{
 renderModeUI();
 renderAll();
 refreshAll();
-setInterval(refreshAll, 45000);
+
+// 每 10 秒觸發一次，但畫面不在前景（螢幕鎖定、切到別的 App）時跳過，
+// 不浪費 TDX 的每月查詢額度；回到前景會立刻補一次最新資料。
+const AUTO_REFRESH_MS = 10000;
+setInterval(()=>{
+  if(document.visibilityState === 'visible') refreshAll();
+}, AUTO_REFRESH_MS);
+document.addEventListener('visibilitychange', ()=>{
+  if(document.visibilityState === 'visible') refreshAll();
+});
 </script>
 </body>
 </html>
