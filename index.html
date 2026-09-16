@@ -290,7 +290,7 @@
    因為根本沒抓到新版程式碼。這裡每次打開頁面都會用 no-store 重新跟伺服器要一次
    最新的 index.html，比對版本字串，不一樣就自動強制重新整理一次拿到最新版，
    不用使用者自己想辦法清快取。 */
-const APP_VERSION = '2026091711';
+const APP_VERSION = '2026091712';
 (function selfUpdateCheck(){
   try{
     const guardKey = 'appVersionReloadGuard';
@@ -864,6 +864,26 @@ const KRTC_FACILITY_CATS = [
   { key:'InformationSpots', label:'詢問處',
     icon:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 11v5.3M12 7.7h.01"/></svg>' }
 ];
+// TDX 官方資料裡美麗島站的廁所／電梯／詢問處欄位是空的（只有一張平面圖圖檔），
+// 但使用者不要連結、要看到內容——所以這裡照官方站內平面圖手動謄寫文字描述當備援，
+// 只有在 TDX 那個分類真的是空的時候才會用到，會清楚標示這是人工整理、不是即時資料。
+const KRTC_FACILITY_MANUAL = {
+  meilidao: {
+    Toilets: [
+      { Description:'廁所（一般／無障礙／親子哺乳室）：近5、7號出口，B1穿堂層', FloorLevel:'B1' },
+      { Description:'廁所：紅線月台層南側', FloorLevel:'B3' }
+    ],
+    Elevators: [
+      { Description:'出口電梯：1號出口⇄穹頂大廳', FloorLevel:'B1' },
+      { Description:'出口電梯：3號出口⇄穹頂大廳', FloorLevel:'B1' },
+      { Description:'電梯：近5、7號出口，可連通穹頂大廳／轉換層／月台層', FloorLevel:'B1-B3' }
+    ],
+    InformationSpots: [
+      { Description:'服務／詢問處：11號出口通道附近', FloorLevel:'B1' }
+    ]
+  }
+};
+
 async function openKrtcFacility(stationKey){
   const st = KRTC_STATIONS.find(s=>s.key===stationKey);
   document.getElementById('sheetTitle').textContent = st.name + ' 站內設施';
@@ -873,13 +893,22 @@ async function openKrtcFacility(stationKey){
   overlay.classList.add('show');
   try{
     const data = await ensureKrtcFacility(st.ids, 'high');
+    const manual = KRTC_FACILITY_MANUAL[stationKey];
+    let usedManual = false;
     let html = '';
     KRTC_FACILITY_CATS.forEach(cat=>{
-      const items = data.flatMap(d=> d[cat.key] || []);
+      let items = data.flatMap(d=> d[cat.key] || []);
+      if(!items.length && manual && manual[cat.key] && manual[cat.key].length){
+        items = manual[cat.key];
+        usedManual = true;
+      }
       if(!items.length) return;
       html += `<div class="section-title" style="margin-top:14px;"><span class="sectionIcon">${cat.icon}</span>${cat.label}</div>`;
       html += items.map(it=>`<div class="stopitem"><div><div class="n">${it.Description||''}</div>${it.FloorLevel?`<div class="d">樓層 ${it.FloorLevel}</div>`:''}</div></div>`).join('');
     });
+    if(usedManual){
+      html = `<p class="hint">此站的設施清單依官方站內平面圖人工整理，非即時資料，實際位置以現場標示為準。</p>` + html;
+    }
     body.innerHTML = html || '<div class="muted">查無此站設施資料</div>';
   }catch(e){
     body.innerHTML = errBox(e.message, ()=>openKrtcFacility(stationKey));
