@@ -374,23 +374,40 @@ function loadCache(key, maxAgeMs){
   }catch(e){ return null; }
 }
 
-// 全站唯一的請求佇列：所有 tdxGet 呼叫（不論來自定時刷新、手動刷新，
-// 還是彈窗裡的查詢）都會被排成一直線，強制間隔發送，
-// 從根本上避免短時間內同時打出多個請求觸發 TDX 的流量限制。
-const REQUEST_GAP_MS = 1000;
+// 全站唯一的請求佇列：所有 tdxGet 呼叫都會排隊、強制間隔發送，避免觸發 TDX 流量限制。
+// 但佇列分兩種優先權：使用者「現在正在等」的操作（點卡片、開站牌選擇、搜尋…）用 high，
+// 會插到背景定時刷新（normal）前面優先發送，讓有人在等的操作不用排在背景任務後面枯等。
+const REQUEST_GAP_MS = 900;
 let lastRequestAt = 0;
-let requestQueue = Promise.resolve();
+let queueItems = [];
+let queueRunning = false;
 
-function queueRequest(task){
-  const run = async ()=>{
+function queueRequest(task, priority){
+  return new Promise((resolve, reject)=>{
+    const item = { task, resolve, reject };
+    if(priority === 'high'){
+      let idx = queueItems.findIndex(i=> !i.high);
+      if(idx === -1) idx = queueItems.length;
+      queueItems.splice(idx, 0, Object.assign(item, {high:true}));
+    } else {
+      queueItems.push(item);
+    }
+    runQueue();
+  });
+}
+
+async function runQueue(){
+  if(queueRunning) return;
+  queueRunning = true;
+  while(queueItems.length){
+    const item = queueItems.shift();
     const wait = Math.max(0, REQUEST_GAP_MS - (Date.now() - lastRequestAt));
     if(wait > 0) await sleep(wait);
     lastRequestAt = Date.now();
-    return task();
-  };
-  const result = requestQueue.then(run, run);
-  requestQueue = result.then(()=>{}, ()=>{}); // 就算失敗也讓佇列繼續往下跑
-  return result;
+    try{ item.resolve(await item.task()); }
+    catch(e){ item.reject(e); }
+  }
+  queueRunning = false;
 }
 
 async function tdxGetRaw(path){
@@ -407,7 +424,8 @@ async function tdxGetRaw(path){
   return res.json();
 }
 
-async function tdxGet(path){
+// priority: 'high' 給使用者正在等的互動操作（跳到背景刷新前面），不傳就是背景排程用的一般順序。
+async function tdxGet(path, priority){
   return queueRequest(async ()=>{
     let delay = 1500;
     for(let attempt=0; attempt<4; attempt++){
@@ -422,7 +440,7 @@ async function tdxGet(path){
         throw e;
       }
     }
-  });
+  }, priority);
 }
 
 /* ====================== 小工具 ====================== */
@@ -449,17 +467,73 @@ function errBox(msg, retryFn){
 // 之後刷新失敗時就顯示這份舊資料＋小提示，而不是整塊變成錯誤畫面卡住畫面。
 let lastTraTrainsByMode = {};
 
+// 車資表幾乎不會變，快取 7 天。全天班表用「日期」當快取 key，過了當天自然失效重抓。
+const TRA_FARE_TTL = 7*24*3600*1000;
+let lastTraFareByMode = {};
+let lastTraODByMode = {};
+
+function fareCodeForTrainType(name){
+  if(name.includes('自強') || name.includes('普悠瑪') || name.includes('太魯閣')) return '自';
+  if(name.includes('莒光')) return '莒';
+  if(name.includes('復興')) return '復';
+  return '普'; // 區間、區間快等無分等車種
+}
+function fareForTrainType(fares, trainTypeName){
+  if(!fares) return null;
+  const entry = fares.find(f=> f.TicketType === '成'+fareCodeForTrainType(trainTypeName));
+  return entry ? entry.Price : null;
+}
+async function ensureTraFare(mode, priority){
+  const cfg = TRA_DIRECTIONS[mode];
+  const key = 'traFare_'+cfg.fromStation+'_'+cfg.toStation;
+  const cached = loadCache(key, TRA_FARE_TTL);
+  if(cached){ lastTraFareByMode[mode] = cached; return cached; }
+  const data = await tdxGet(`/v2/Rail/TRA/ODFare/${cfg.fromStation}/to/${cfg.toStation}`, priority);
+  const fares = (data && data[0] && data[0].Fares) || [];
+  lastTraFareByMode[mode] = fares;
+  saveCache(key, fares);
+  return fares;
+}
+async function ensureTraOD(mode, priority){
+  const cfg = TRA_DIRECTIONS[mode];
+  const today = new Date().toISOString().slice(0,10);
+  const key = 'traOD_'+mode+'_'+today;
+  const cached = loadCache(key);
+  if(cached){ lastTraODByMode[mode] = cached; return cached; }
+  const data = await tdxGet(`/v2/Rail/TRA/DailyTimetable/OD/${cfg.fromStation}/to/${cfg.toStation}/${today}`, priority);
+  lastTraODByMode[mode] = data || [];
+  saveCache(key, data || []);
+  return data || [];
+}
+function findArrivalTime(mode, trainNo){
+  const od = lastTraODByMode[mode];
+  if(!od) return null;
+  const entry = od.find(t=> t.DailyTrainInfo.TrainNo === trainNo);
+  return entry ? entry.DestinationStopTime.ArrivalTime.slice(0,5) : null;
+}
+// 車資、全天班表都不影響當下要不要畫班次，背景抓、抓到才補畫一次即可。
+function enrichTraInBackground(mode){
+  Promise.all([ ensureTraFare(mode), ensureTraOD(mode) ]).then(()=>{
+    if(mode === getMode() && lastTraTrainsByMode[mode]) renderTraTrains(lastTraTrainsByMode[mode], false);
+  }).catch(()=>{});
+}
+
 function renderTraTrains(trains, stale, errMsg){
   const el = document.getElementById('traTrains');
   if(!trains.length){
     el.innerHTML = '<div class="hero-empty">目前沒有查到班次</div>';
     return;
   }
+  const mode = getMode();
+  const fares = lastTraFareByMode[mode];
   el.innerHTML = trains.map(t=>{
     const delay = t.DelayTime>0 ? `誤點 ${t.DelayTime} 分` : '準點';
+    const price = fareForTrainType(fares, t.TrainTypeName.Zh_tw);
+    const arr = findArrivalTime(mode, t.TrainNo);
+    const bits = [delay, price!=null?('$'+price):null, arr?('抵達 '+arr):null].filter(Boolean).join(' · ');
     return `<div class="hero-train" data-trainno="${t.TrainNo}">
       <div class="l">${t.TrainTypeName.Zh_tw} ${t.TrainNo}
-        <small>往${t.EndingStationName.Zh_tw} · ${delay} · 點看時刻表</small>
+        <small>${bits}</small>
       </div>
       <div class="r">${t.ScheduledDepartureTime.slice(0,5)}</div>
     </div>`;
@@ -477,6 +551,7 @@ function renderTraFromCache(){
   const cached = lastTraTrainsByMode[mode];
   if(cached && cached.length){
     renderTraTrains(cached, false);
+    enrichTraInBackground(mode);
   } else {
     document.getElementById('traTrains').innerHTML = '<div class="skeleton"></div>';
   }
@@ -497,7 +572,10 @@ async function loadTRA(){
     saveCache('tra_'+mode, trains);
     // 這通請求發出去之後，使用者可能已經切到另一個模式了——
     // 這種「慢半拍」的回應只更新快取，畫面交給目前真正在顯示的模式處理，不能蓋過去。
-    if(mode === getMode()) renderTraTrains(trains, false);
+    if(mode === getMode()){
+      renderTraTrains(trains, false);
+      enrichTraInBackground(mode);
+    }
   }catch(e){
     if(mode !== getMode()) return;
     const cached = lastTraTrainsByMode[mode];
@@ -528,14 +606,14 @@ async function openTraRangePicker(){
     <div id="rangeResults" style="margin-top:14px;"></div>
   `;
   overlay.classList.add('show');
+  const mode = getMode();
   const doForwardSearch = async ()=>{
     const from = document.getElementById('rangeFrom').value;
     const results = document.getElementById('rangeResults');
     if(!from){ results.innerHTML = '<div class="muted">請選擇時間</div>'; return; }
     results.innerHTML = '<div class="muted">查詢中…</div>';
     try{
-      const today = new Date().toISOString().slice(0,10);
-      const data = await tdxGet(`/v2/Rail/TRA/DailyTimetable/OD/${cfg.fromStation}/to/${cfg.toStation}/${today}`);
+      const [data, fares] = await Promise.all([ ensureTraOD(mode, 'high'), ensureTraFare(mode, 'high') ]);
       const list = (data||[])
         .filter(t=> t.OriginStopTime.DepartureTime.slice(0,5) >= from)
         .sort((a,b)=> a.OriginStopTime.DepartureTime.localeCompare(b.OriginStopTime.DepartureTime))
@@ -543,10 +621,11 @@ async function openTraRangePicker(){
       if(!list.length){ results.innerHTML = '<div class="muted">這個時間之後沒有查到班次了</div>'; return; }
       results.innerHTML = list.map(t=>{
         const info = t.DailyTrainInfo;
+        const price = fareForTrainType(fares, info.TrainTypeName.Zh_tw);
         return `<div class="stopitem">
           <div>
             <div class="n">${info.TrainTypeName.Zh_tw} ${info.TrainNo}</div>
-            <div class="d">往${info.EndingStationName.Zh_tw} · 抵達 ${t.DestinationStopTime.ArrivalTime.slice(0,5)}</div>
+            <div class="d">抵達 ${t.DestinationStopTime.ArrivalTime.slice(0,5)}${price!=null?(' · $'+price):''}</div>
           </div>
           <div style="font-weight:800; color:var(--accent);">${t.OriginStopTime.DepartureTime.slice(0,5)}</div>
         </div>`;
@@ -558,29 +637,45 @@ async function openTraRangePicker(){
   document.getElementById('rangeSearchBtn').onclick = doForwardSearch;
 }
 
+// 只顯示：列車分級與班次、上車時間、抵達時間、票價 —— 不再列出沿途每一站，
+// 而且直接沿用已經快取的全天班表／車資，通常完全不用等網路（開過一次同模式後幾乎都是秒開）。
 async function openTrainDetail(trainNo){
-  document.getElementById('sheetTitle').textContent = '車次 ' + trainNo + ' 時刻表';
+  document.getElementById('sheetTitle').textContent = '車次 ' + trainNo;
   document.getElementById('sheetHint').style.display = 'none';
   const body = document.getElementById('sheetBody');
-  body.innerHTML = '<div class="muted">載入中…</div>';
+  const mode = getMode();
   overlay.classList.add('show');
+
+  const renderDetail = (entry, fares, stale)=>{
+    const info = entry.DailyTrainInfo;
+    const price = fareForTrainType(fares, info.TrainTypeName.Zh_tw);
+    body.innerHTML = `
+      <div class="stopitem"><div><div class="n">車種／車次</div></div><div style="font-weight:800;">${info.TrainTypeName.Zh_tw} ${trainNo}</div></div>
+      <div class="stopitem"><div><div class="n">上車時間</div><div class="d">${entry.OriginStopTime.StationName.Zh_tw}</div></div><div style="font-weight:800; color:var(--accent);">${entry.OriginStopTime.DepartureTime.slice(0,5)}</div></div>
+      <div class="stopitem"><div><div class="n">抵達時間</div><div class="d">${entry.DestinationStopTime.StationName.Zh_tw}</div></div><div style="font-weight:800; color:var(--accent);">${entry.DestinationStopTime.ArrivalTime.slice(0,5)}</div></div>
+      <div class="stopitem"><div><div class="n">全票票價</div></div><div style="font-weight:800;">${price!=null ? '$'+price : '—'}</div></div>
+      ${info.Note && info.Note.Zh_tw ? `<p class="hint" style="margin-top:10px;">${info.Note.Zh_tw}</p>` : ''}
+      ${stale ? `<div class="staleNote">更新失敗，顯示上次資料</div>` : ''}
+    `;
+  };
+
+  const cachedOD = lastTraODByMode[mode];
+  const cachedFares = lastTraFareByMode[mode];
+  const cachedEntry = cachedOD && cachedOD.find(t=> t.DailyTrainInfo.TrainNo === trainNo);
+  if(cachedEntry){ renderDetail(cachedEntry, cachedFares); } // 第 1 層：有快取秒開
+  else { body.innerHTML = '<div class="muted">載入中…</div>'; }
+
   try{
-    const data = await tdxGet(`/v3/Rail/TRA/GeneralTrainTimetable/TrainNo/${trainNo}`);
-    const tt = data && data.TrainTimetables && data.TrainTimetables[0];
-    if(!tt){ body.innerHTML = '<div class="muted">查無這班車的時刻表資料</div>'; return; }
-    const info = tt.TrainInfo;
-    const highlightIds = [TRA_STATIONS.KAOHSIUNG, TRA_STATIONS.PINGTUNG];
-    let html = `<p class="hint">${info.TrainTypeName.Zh_tw} ${trainNo} · ${info.StartingStationName.Zh_tw} → ${info.EndingStationName.Zh_tw}${info.Note?(' · '+info.Note):''}</p>`;
-    html += (tt.StopTimes||[]).map(s=>{
-      const hi = highlightIds.includes(s.StationID);
-      return `<div class="stopitem"${hi?' style="color:var(--accent); font-weight:800;"':''}>
-        <div><div class="n">${s.StationName.Zh_tw}</div></div>
-        <div>${s.DepartureTime || s.ArrivalTime || ''}</div>
-      </div>`;
-    }).join('');
-    body.innerHTML = html;
+    const [od, fares] = await Promise.all([ ensureTraOD(mode, 'high'), ensureTraFare(mode, 'high') ]);
+    const entry = (od||[]).find(t=> t.DailyTrainInfo.TrainNo === trainNo);
+    if(!entry){
+      if(!cachedEntry) body.innerHTML = '<div class="muted">查無這班車的資料</div>';
+      return;
+    }
+    renderDetail(entry, fares);
   }catch(e){
-    body.innerHTML = errBox(e.message, ()=>openTrainDetail(trainNo));
+    if(cachedEntry){ renderDetail(cachedEntry, cachedFares, true); }
+    else { body.innerHTML = errBox(e.message, ()=>openTrainDetail(trainNo)); }
   }
 }
 
@@ -683,7 +778,7 @@ async function getKrtcStationInfo(stationId){
   if(krtcStationInfoCache[stationId]) return krtcStationInfoCache[stationId];
   const cached = JSON.parse(localStorage.getItem('krtcInfo_'+stationId) || 'null');
   if(cached){ krtcStationInfoCache[stationId] = cached; return cached; }
-  const data = await tdxGet(`/v2/Rail/Metro/Station/KRTC?$filter=${encodeURIComponent(`StationID eq '${stationId}'`)}`);
+  const data = await tdxGet(`/v2/Rail/Metro/Station/KRTC?$filter=${encodeURIComponent(`StationID eq '${stationId}'`)}`, 'high');
   const info = (data && data[0]) || null;
   krtcStationInfoCache[stationId] = info;
   localStorage.setItem('krtcInfo_'+stationId, JSON.stringify(info));
@@ -801,7 +896,7 @@ async function loadBusEta(routeKey){
   try{
     const route = getBusRoutes().find(r=>r.key===routeKey);
     const filter = encodeURIComponent(`RouteName/Zh_tw eq '${route.name}'`);
-    const data = await tdxGet(`/v2/Bus/EstimatedTimeOfArrival/City/Kaohsiung?$filter=${filter}`);
+    const data = await tdxGet(`/v2/Bus/EstimatedTimeOfArrival/City/Kaohsiung?$filter=${filter}`, 'high');
     const stop = (data||[]).find(s=> s.StopUID === picked.StopUID);
     lastBusStopData[routeKey+'_'+mode] = stop || null;
     persistBusCache();
@@ -848,22 +943,50 @@ async function loadAllBusEta(){
 }
 
 /* ====================== YouBike ====================== */
-// 站點清單（名稱、座標）變動很少，快取 7 天；即時可借/可還數每次刷新才重抓。
+// 打開網頁就自動定位、自動抓「使用者現在所在城市」的站點，不限高雄——
+// 用使用者座標比對 TDX 有 YouBike 資料的各縣市大概中心點，抓最近的那個縣市。
+const YOUBIKE_CITIES = [
+  { city:'Taipei',        lat:25.0330, lon:121.5654 },
+  { city:'NewTaipei',     lat:25.0120, lon:121.4657 },
+  { city:'Taoyuan',       lat:24.9936, lon:121.3010 },
+  { city:'Hsinchu',       lat:24.8138, lon:120.9675 },
+  { city:'HsinchuCounty', lat:24.8387, lon:121.0177 },
+  { city:'MiaoliCounty',  lat:24.5602, lon:120.8214 },
+  { city:'Taichung',      lat:24.1477, lon:120.6736 },
+  { city:'ChanghuaCounty',lat:24.0518, lon:120.5161 },
+  { city:'YunlinCounty',  lat:23.7092, lon:120.4313 },
+  { city:'Chiayi',        lat:23.4801, lon:120.4491 },
+  { city:'ChiayiCounty',  lat:23.4518, lon:120.2555 },
+  { city:'Tainan',        lat:22.9997, lon:120.2270 },
+  { city:'Kaohsiung',     lat:22.6273, lon:120.3014 },
+  { city:'PingtungCounty',lat:22.5519, lon:120.5487 },
+  { city:'TaitungCounty', lat:22.7583, lon:121.1444 }
+];
+function nearestYoubikeCity(lat, lon){
+  let best = null, bestDist = Infinity;
+  YOUBIKE_CITIES.forEach(c=>{
+    const d = haversineMeters(lat, lon, c.lat, c.lon);
+    if(d < bestDist){ bestDist = d; best = c.city; }
+  });
+  return best;
+}
+
+// 站點清單（名稱、座標）變動很少，依城市快取 7 天；即時可借/可還數每次刷新才重抓。
 let youbikeStations = null;
+let youbikeStationsCity = null;
 let lastYoubikeAvail = null;
 let userGeo = null;
 const YOUBIKE_STATIONS_TTL = 7*24*3600*1000;
 
-async function getYoubikeStations(){
-  if(youbikeStations) return youbikeStations;
-  const cached = JSON.parse(localStorage.getItem('youbikeStations_v1') || 'null');
-  if(cached && (Date.now() - cached.ts) < YOUBIKE_STATIONS_TTL){
-    youbikeStations = cached.data;
-    return youbikeStations;
-  }
-  const data = await tdxGet(`/v2/Bike/Station/City/Kaohsiung?$top=1200`);
+async function getYoubikeStations(city, priority){
+  if(youbikeStations && youbikeStationsCity === city) return youbikeStations;
+  const key = 'youbikeStations_'+city;
+  const cached = loadCache(key, YOUBIKE_STATIONS_TTL);
+  if(cached){ youbikeStations = cached; youbikeStationsCity = city; return youbikeStations; }
+  const data = await tdxGet(`/v2/Bike/Station/City/${city}?$top=1200`, priority);
   youbikeStations = data || [];
-  localStorage.setItem('youbikeStations_v1', JSON.stringify({ ts: Date.now(), data: youbikeStations }));
+  youbikeStationsCity = city;
+  saveCache(key, youbikeStations);
   return youbikeStations;
 }
 
@@ -887,24 +1010,31 @@ function requestGeo(){
   });
 }
 
+// 開頁就自動要求定位一次（瀏覽器原生權限彈窗，只需要同意一次，之後不會再問）。
+async function autoLocateYouBike(){
+  if(userGeo) return; // 已經有快取的位置了，refreshAll 會照常用它更新
+  const wrap = document.getElementById('youbikeCard');
+  if(wrap && !wrap.innerHTML.trim()) wrap.innerHTML = '<div class="card"><div class="skeleton"></div></div>';
+  const geo = await requestGeo();
+  if(!geo){
+    if(wrap) wrap.innerHTML = `<div class="card">
+      <div class="muted">無法取得定位，請在瀏覽器的網站設定裡允許定位權限後重新整理頁面</div>
+      <button class="locateBtn" id="youbikeLocateBtn" style="margin-top:8px;">重試定位</button>
+    </div>`;
+    const btn = document.getElementById('youbikeLocateBtn');
+    if(btn) btn.onclick = autoLocateYouBike;
+    return;
+  }
+  userGeo = geo;
+  saveCache('youbikeGeo', userGeo);
+  await loadYouBike();
+}
+
 function renderYoubikeCard(stale, errMsg){
   const wrap = document.getElementById('youbikeCard');
   if(!wrap) return;
   if(!userGeo){
-    wrap.innerHTML = `<div class="card">
-      <div class="muted">開啟定位權限，顯示附近 YouBike 站點即時可借還數量</div>
-      <button class="locateBtn" id="youbikeLocateBtn" style="margin-top:8px;">允許定位</button>
-    </div>`;
-    document.getElementById('youbikeLocateBtn').onclick = async ()=>{
-      wrap.innerHTML = '<div class="card"><div class="skeleton"></div></div>';
-      userGeo = await requestGeo();
-      if(!userGeo){
-        wrap.innerHTML = '<div class="card"><div class="muted">無法取得定位，請確認瀏覽器的定位權限已開啟</div></div>';
-        return;
-      }
-      saveCache('youbikeGeo', userGeo);
-      await loadYouBike();
-    };
+    wrap.innerHTML = '<div class="card"><div class="skeleton"></div></div>';
     return;
   }
   if(!youbikeStations || !lastYoubikeAvail){
@@ -940,10 +1070,11 @@ function renderYoubikeCard(stale, errMsg){
 }
 
 async function loadYouBike(){
-  if(!userGeo){ renderYoubikeCard(); return; }
+  if(!userGeo) return; // 還沒定位成功就先跳過，不耗額度；autoLocateYouBike() 成功後會自己補一次
+  const city = nearestYoubikeCity(userGeo.lat, userGeo.lon);
   try{
-    await getYoubikeStations();
-    const data = await tdxGet(`/v2/Bike/Availability/City/Kaohsiung?$top=1200`);
+    await getYoubikeStations(city);
+    const data = await tdxGet(`/v2/Bike/Availability/City/${city}?$top=1200`);
     lastYoubikeAvail = data || [];
     saveCache('youbikeAvail', lastYoubikeAvail);
     renderYoubikeCard();
@@ -961,6 +1092,50 @@ const overlay = document.getElementById('overlay');
 document.getElementById('closeSheet').onclick = ()=> overlay.classList.remove('show');
 overlay.onclick = (e)=>{ if(e.target===overlay) overlay.classList.remove('show'); };
 
+// 公車站牌清單幾乎不會變，快取 24 小時。同一條路線第二次以後打開站牌選擇，
+// 完全不用等網路、也不會再消耗一次查詢額度。
+const BUS_STOPS_TTL = 24*3600*1000;
+
+function renderStopPickerList(data, routeKey, mode){
+  const body = document.getElementById('sheetBody');
+  const picked = getPickedStop(routeKey);
+  const byDir = {};
+  (data||[]).forEach(s=>{
+    byDir[s.Direction] = byDir[s.Direction] || [];
+    byDir[s.Direction].push(s);
+  });
+  let html = '';
+  Object.keys(byDir).sort().forEach(dir=>{
+    const list = byDir[dir].sort((a,b)=>a.StopSequence-b.StopSequence);
+    const terminus = list[list.length-1].StopName.Zh_tw;
+    html += `<div class="section-title" style="margin-top:14px;">往 ${terminus} 方向</div>`;
+    html += list.map(s=>{
+      const isPicked = picked && picked.StopUID===s.StopUID;
+      return `<div class="stopitem">
+        <div>
+          <div class="n">${s.StopName.Zh_tw}</div>
+          <div class="d">第 ${s.StopSequence} 站</div>
+        </div>
+        <button data-uid="${s.StopUID}">${isPicked?'已選':'選擇'}</button>
+      </div>`;
+    }).join('');
+  });
+  body.innerHTML = html || '<div class="muted">查無站牌資料</div>';
+  body.querySelectorAll('button[data-uid]').forEach(btn=>{
+    btn.onclick = ()=>{
+      const s = data.find(x=>x.StopUID===btn.dataset.uid);
+      setPickedStop(routeKey, mode, {
+        StopUID: s.StopUID,
+        StopName: s.StopName.Zh_tw,
+        seq: s.StopSequence
+      });
+      overlay.classList.remove('show');
+      renderBusSkeleton();
+      loadBusEta(routeKey);
+    };
+  });
+}
+
 async function openStopPicker(routeKey){
   const route = getBusRoutes().find(r=>r.key===routeKey);
   const mode = getMode();
@@ -970,49 +1145,23 @@ async function openStopPicker(routeKey){
   hint.style.display = 'block';
   hint.textContent = `選你${modeLabel}時上車的站牌，之後首頁只顯示這一站的到站時間（去程／回程可各自設定不同站牌）。`;
   const body = document.getElementById('sheetBody');
-  body.innerHTML = '<div class="muted">載入中…</div>';
   overlay.classList.add('show');
+
+  const cacheKey = 'busStops_'+route.name;
+  const cached = loadCache(cacheKey, BUS_STOPS_TTL);
+  if(cached){
+    renderStopPickerList(cached, routeKey, mode); // 第 1 層：有快取立刻畫出來
+  } else {
+    body.innerHTML = '<div class="muted">載入中…</div>';
+  }
   try{
     const filter = encodeURIComponent(`RouteName/Zh_tw eq '${route.name}'`);
-    const data = await tdxGet(`/v2/Bus/EstimatedTimeOfArrival/City/Kaohsiung?$filter=${filter}`);
-    const picked = getPickedStop(routeKey);
-    const byDir = {};
-    (data||[]).forEach(s=>{
-      byDir[s.Direction] = byDir[s.Direction] || [];
-      byDir[s.Direction].push(s);
-    });
-    let html = '';
-    Object.keys(byDir).sort().forEach(dir=>{
-      const list = byDir[dir].sort((a,b)=>a.StopSequence-b.StopSequence);
-      const terminus = list[list.length-1].StopName.Zh_tw;
-      html += `<div class="section-title" style="margin-top:14px;">往 ${terminus} 方向</div>`;
-      html += list.map(s=>{
-        const isPicked = picked && picked.StopUID===s.StopUID;
-        return `<div class="stopitem">
-          <div>
-            <div class="n">${s.StopName.Zh_tw}</div>
-            <div class="d">第 ${s.StopSequence} 站</div>
-          </div>
-          <button data-uid="${s.StopUID}">${isPicked?'已選':'選擇'}</button>
-        </div>`;
-      }).join('');
-    });
-    body.innerHTML = html || '<div class="muted">查無站牌資料</div>';
-    body.querySelectorAll('button[data-uid]').forEach(btn=>{
-      btn.onclick = ()=>{
-        const s = data.find(x=>x.StopUID===btn.dataset.uid);
-        setPickedStop(routeKey, mode, {
-          StopUID: s.StopUID,
-          StopName: s.StopName.Zh_tw,
-          seq: s.StopSequence
-        });
-        overlay.classList.remove('show');
-        renderBusSkeleton();
-        loadBusEta(routeKey);
-      };
-    });
+    const data = await tdxGet(`/v2/Bus/EstimatedTimeOfArrival/City/Kaohsiung?$filter=${filter}`, 'high');
+    saveCache(cacheKey, data);
+    renderStopPickerList(data, routeKey, mode);
   }catch(e){
-    body.innerHTML = errBox(e.message, ()=>openStopPicker(routeKey));
+    if(!cached){ body.innerHTML = errBox(e.message, ()=>openStopPicker(routeKey)); }
+    // 有快取的話就維持已經畫出來的清單，站牌名單本來就很少變動，不用特別顯示錯誤打擾使用者。
   }
 }
 
@@ -1038,7 +1187,7 @@ async function openAddRoute(){
     results.innerHTML = '<div class="muted">搜尋中…</div>';
     try{
       const filter = encodeURIComponent(`contains(RouteName/Zh_tw,'${kw}')`);
-      const data = await tdxGet(`/v2/Bus/Route/City/Kaohsiung?$filter=${filter}&$top=15`);
+      const data = await tdxGet(`/v2/Bus/Route/City/Kaohsiung?$filter=${filter}&$top=15`, 'high');
       if(!data || !data.length){ results.innerHTML = '<div class="muted">查無符合的路線</div>'; return; }
       const existing = getBusRoutes().map(r=>r.name);
       results.innerHTML = data.map(r=>{
@@ -1130,6 +1279,7 @@ renderModeUI();
 renderTraFromCache();
 renderAll();
 refreshAll();
+autoLocateYouBike(); // 打開網頁就自動要求定位，不用使用者按按鈕
 
 // 每 20 秒觸發一次，但畫面不在前景（螢幕鎖定、切到別的 App）時跳過，
 // 不浪費 TDX 的每月查詢額度；回到前景會立刻補一次最新資料。
