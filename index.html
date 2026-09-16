@@ -3,10 +3,11 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="apple-mobile-web-app-title" content="通勤">
+<meta name="apple-mobile-web-app-title" content="天繃開橘">
+<link rel="apple-touch-icon" href="icon.png">
 <meta name="theme-color" content="#0f172a" media="(prefers-color-scheme: dark)">
 <meta name="theme-color" content="#f8fafc" media="(prefers-color-scheme: light)">
-<title>通勤小幫手</title>
+<title>天繃開橘</title>
 <style>
   :root{
     --bg:#f8fafc; --card:#ffffff; --text:#0f172a; --sub:#64748b;
@@ -79,6 +80,13 @@
   .card-name{font-size:14.5px; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
   .card-sub{font-size:12px; color:var(--sub); margin-top:2px;}
   .gearbtn{background:none; border:none; color:var(--sub); font-size:15px; padding:4px; flex-shrink:0;}
+  .card.clickable{cursor:pointer;}
+  .card.clickable:active{opacity:.7;}
+  .chev{color:var(--sub); font-size:18px; flex-shrink:0;}
+  .card.addroute{cursor:pointer; text-align:center; border-style:dashed;}
+  .card.addroute:active{opacity:.6;}
+  .hero-train{cursor:pointer;}
+  .hero-train:active{opacity:.75;}
 
   .etalist{display:flex; gap:8px; margin-top:10px; flex-wrap:wrap;}
   .eta{
@@ -132,7 +140,7 @@
 
 <div class="topbar">
   <div>
-    <h1>通勤小幫手</h1>
+    <h1>天繃開橘</h1>
     <div class="sub" id="updatedAt">載入中…</div>
   </div>
   <div class="btnrow">
@@ -161,7 +169,7 @@
 <div id="busCards"></div>
 
 <div class="footer">
-  資料來源：TDX 運輸資料流通服務平臺 · 每 60 秒自動更新<br>
+  資料來源：TDX 運輸資料流通服務平臺 · 每 45 秒自動更新<br>
   <button id="settingsBtn">設定常用公車站牌</button>
 </div>
 
@@ -170,15 +178,15 @@
   <div class="sheet">
     <div class="closebar"><button id="closeSheet">關閉 ✕</button></div>
     <h2 id="sheetTitle">選擇站牌</h2>
-    <p class="hint">選你平常上車的站牌，之後首頁只顯示這一站的到站時間。</p>
+    <p class="hint" id="sheetHint">選你平常上車的站牌，之後首頁只顯示這一站的到站時間。</p>
     <div id="sheetBody"><div class="muted">載入中…</div></div>
   </div>
 </div>
 
 <script>
 /* ====================== 設定區 ====================== */
-const TDX_CLIENT_ID = 'er46831486-0c5e305e-3e19-4a3b';
-const TDX_CLIENT_SECRET = '6c59a199-57f8-4f50-9723-b12a63fd529b';
+const TDX_CLIENT_ID = 'M144040015-6d10b8c1-4e17-4a74';
+const TDX_CLIENT_SECRET = 'cff4b35c-2152-4564-a5f5-dcd38c8608ec';
 const TDX_AUTH_URL = 'https://tdx.transportdata.tw/auth/realms/TDXConnect/protocol/openid-connect/token';
 const TDX_API = 'https://tdx.transportdata.tw/api/basic';
 
@@ -190,16 +198,39 @@ const TRA_DIRECTIONS = {
 };
 
 const KRTC_LEGS = [
-  { key:'hamasen', name:'哈瑪星', stationId:'O1', headsignMatch:'大寮', note:'橘線起站，於美麗島轉紅線可到高雄車站' },
-  { key:'kstation', name:'高雄車站', stationId:'R11', headsignMatch:'小港', note:'紅線南下，於美麗島轉橘線可到哈瑪星' }
+  { key:'hamasen', name:'哈瑪星', stationId:'O1', line:'橘線', lineColor:'#f97316', note:'橘線起點站，於美麗島可轉紅線' },
+  { key:'kstation', name:'高雄車站', stationId:'R11', line:'紅線', lineColor:'#dc2626', note:'紅線中途站，可往小港或往岡山方向' }
 ];
 
-const BUS_ROUTES = [
+const DEFAULT_BUS_ROUTES = [
   { key:'o1',  name:'橘1',      tag:'橘1',   color:'#f97316' },
   { key:'o1e', name:'橘1延',    tag:'橘1延', color:'#fb923c' },
   { key:'r52', name:'紅52',     tag:'紅52',  color:'#dc2626' },
   { key:'w50', name:'50五福幹線', tag:'五福幹線', color:'#7c3aed' }
 ];
+const ROUTE_COLORS = ['#f97316','#dc2626','#7c3aed','#0891b2','#16a34a','#d97706','#db2777','#2563eb'];
+
+function getBusRoutes(){
+  const saved = JSON.parse(localStorage.getItem('busRoutes') || 'null');
+  if(saved) return saved;
+  localStorage.setItem('busRoutes', JSON.stringify(DEFAULT_BUS_ROUTES));
+  return DEFAULT_BUS_ROUTES.slice();
+}
+function saveBusRoutes(list){
+  localStorage.setItem('busRoutes', JSON.stringify(list));
+}
+function addBusRoute(name){
+  const list = getBusRoutes();
+  if(list.some(r=>r.name===name)) return;
+  const color = ROUTE_COLORS[list.length % ROUTE_COLORS.length];
+  const key = 'r_' + Date.now();
+  list.push({ key, name, tag:name, color });
+  saveBusRoutes(list);
+}
+function removeBusRoute(key){
+  saveBusRoutes(getBusRoutes().filter(r=>r.key!==key));
+  localStorage.removeItem('busStop_'+key);
+}
 
 /* ====================== Token ====================== */
 async function getToken(){
@@ -261,15 +292,44 @@ async function loadTRA(){
     }
     el.innerHTML = trains.map(t=>{
       const delay = t.DelayTime>0 ? `誤點 ${t.DelayTime} 分` : '準點';
-      return `<div class="hero-train">
+      return `<div class="hero-train" data-trainno="${t.TrainNo}">
         <div class="l">${t.TrainTypeName.Zh_tw} ${t.TrainNo}
-          <small>往${t.EndingStationName.Zh_tw} · ${t.ScheduledDepartureTime.slice(0,5)} · ${delay}</small>
+          <small>往${t.EndingStationName.Zh_tw} · ${t.ScheduledDepartureTime.slice(0,5)} · ${delay} · 點看詳細時刻表</small>
         </div>
         <div class="r">${t.ScheduledDepartureTime.slice(0,5)}</div>
       </div>`;
     }).join('');
+    el.querySelectorAll('.hero-train').forEach(row=>{
+      row.onclick = ()=> openTrainDetail(row.dataset.trainno);
+    });
   }catch(e){
     el.innerHTML = `<div class="hero-empty">⚠️ ${e.message}</div>`;
+  }
+}
+
+async function openTrainDetail(trainNo){
+  document.getElementById('sheetTitle').textContent = '車次 ' + trainNo + ' 時刻表';
+  document.getElementById('sheetHint').style.display = 'none';
+  const body = document.getElementById('sheetBody');
+  body.innerHTML = '<div class="muted">載入中…</div>';
+  overlay.classList.add('show');
+  try{
+    const data = await tdxGet(`/v3/Rail/TRA/GeneralTrainTimetable/TrainNo/${trainNo}`);
+    const tt = data && data.TrainTimetables && data.TrainTimetables[0];
+    if(!tt){ body.innerHTML = '<div class="muted">查無這班車的時刻表資料</div>'; return; }
+    const info = tt.TrainInfo;
+    const highlightIds = [TRA_STATIONS.KAOHSIUNG, TRA_STATIONS.PINGTUNG];
+    let html = `<p class="hint">${info.TrainTypeName.Zh_tw} ${trainNo} · ${info.StartingStationName.Zh_tw} → ${info.EndingStationName.Zh_tw}${info.Note?(' · '+info.Note):''}</p>`;
+    html += (tt.StopTimes||[]).map(s=>{
+      const hi = highlightIds.includes(s.StationID);
+      return `<div class="stopitem"${hi?' style="color:var(--accent); font-weight:800;"':''}>
+        <div><div class="n">${s.StationName.Zh_tw}</div></div>
+        <div>${s.DepartureTime || s.ArrivalTime || ''}</div>
+      </div>`;
+    }).join('');
+    body.innerHTML = html;
+  }catch(e){
+    body.innerHTML = `<div class="err">⚠️ ${e.message}</div>`;
   }
 }
 
@@ -282,19 +342,23 @@ document.getElementById('traSwap').onclick = ()=>{
 function renderKrtcSkeleton(){
   const wrap = document.getElementById('krtcCards');
   wrap.innerHTML = KRTC_LEGS.map(leg=>`
-    <div class="card" id="krtc-${leg.key}">
+    <div class="card clickable" id="krtc-${leg.key}" data-leg="${leg.key}">
       <div class="card-head">
         <div class="card-title">
-          <span class="tag" style="background:${leg.stationId==='O1'?'#f97316':'#dc2626'}">${leg.stationId==='O1'?'橘線':'紅線'}</span>
+          <span class="tag" style="background:${leg.lineColor}">${leg.line}</span>
           <div>
             <div class="card-name">${leg.name} 站</div>
             <div class="card-sub">${leg.note}</div>
           </div>
         </div>
+        <span class="chev">›</span>
       </div>
       <div class="etalist" id="krtc-eta-${leg.key}"><div class="muted">載入中…</div></div>
     </div>
   `).join('');
+  wrap.querySelectorAll('.card[data-leg]').forEach(card=>{
+    card.onclick = ()=> openKrtcDetail(card.dataset.leg);
+  });
 }
 
 async function loadKRTC(){
@@ -304,12 +368,17 @@ async function loadKRTC(){
     const data = await tdxGet(`/v2/Rail/Metro/LiveBoard/KRTC?$filter=${encodeURIComponent(filter)}`);
     KRTC_LEGS.forEach(leg=>{
       const box = document.getElementById('krtc-eta-'+leg.key);
-      const trains = (data||[])
-        .filter(t=> t.StationID===leg.stationId && (t.TripHeadSign||'').includes(leg.headsignMatch))
-        .sort((a,b)=> a.EstimateTime - b.EstimateTime)
-        .slice(0,3);
-      if(!trains.length){ box.innerHTML = '<div class="muted">目前沒有班次資訊</div>'; return; }
-      box.innerHTML = trains.map(t=>{
+      const trains = (data||[]).filter(t=> t.StationID===leg.stationId);
+      // 每個方向（TripHeadSign）只取最快的一班
+      const byHead = {};
+      trains.forEach(t=>{
+        if(!byHead[t.TripHeadSign] || t.EstimateTime < byHead[t.TripHeadSign].EstimateTime){
+          byHead[t.TripHeadSign] = t;
+        }
+      });
+      const list = Object.values(byHead).sort((a,b)=> a.EstimateTime - b.EstimateTime);
+      if(!list.length){ box.innerHTML = '<div class="muted">目前沒有班次資訊</div>'; return; }
+      box.innerHTML = list.map(t=>{
         const m = Math.round(t.EstimateTime/60);
         return `<div class="eta">
           <div class="min ${etaClass(m)}">${t.EstimateTime<60? '進站' : m+'分'}</div>
@@ -324,6 +393,48 @@ async function loadKRTC(){
   }
 }
 
+const krtcStationInfoCache = {};
+async function getKrtcStationInfo(stationId){
+  if(krtcStationInfoCache[stationId]) return krtcStationInfoCache[stationId];
+  const cached = JSON.parse(localStorage.getItem('krtcInfo_'+stationId) || 'null');
+  if(cached){ krtcStationInfoCache[stationId] = cached; return cached; }
+  const data = await tdxGet(`/v2/Rail/Metro/Station/KRTC?$filter=${encodeURIComponent(`StationID eq '${stationId}'`)}`);
+  const info = (data && data[0]) || null;
+  krtcStationInfoCache[stationId] = info;
+  localStorage.setItem('krtcInfo_'+stationId, JSON.stringify(info));
+  return info;
+}
+
+async function openKrtcDetail(legKey){
+  const leg = KRTC_LEGS.find(l=>l.key===legKey);
+  document.getElementById('sheetTitle').textContent = leg.name + ' 站資訊';
+  document.getElementById('sheetHint').style.display = 'none';
+  const body = document.getElementById('sheetBody');
+  body.innerHTML = '<div class="muted">載入中…</div>';
+  overlay.classList.add('show');
+  try{
+    const [info, data] = await Promise.all([
+      getKrtcStationInfo(leg.stationId),
+      tdxGet(`/v2/Rail/Metro/LiveBoard/KRTC?$filter=${encodeURIComponent(`StationID eq '${leg.stationId}'`)}`)
+    ]);
+    const trains = (data||[]).sort((a,b)=> a.EstimateTime - b.EstimateTime);
+    let html = '';
+    if(info && info.StationAddress){
+      html += `<p class="hint">📍 ${info.StationAddress}</p>`;
+    }
+    html += trains.length ? trains.map(t=>{
+      const m = Math.round(t.EstimateTime/60);
+      return `<div class="stopitem">
+        <div><div class="n">${t.TripHeadSign}</div><div class="d">${(t.LineName&&t.LineName.Zh_tw)||''}</div></div>
+        <div style="font-weight:800; color:var(--accent);">${t.EstimateTime<60?'進站':m+'分'}</div>
+      </div>`;
+    }).join('') : '<div class="muted">目前沒有班次資訊</div>';
+    body.innerHTML = html;
+  }catch(e){
+    body.innerHTML = `<div class="err">⚠️ ${e.message}</div>`;
+  }
+}
+
 /* ====================== 公車 ====================== */
 function getPickedStop(routeKey){
   return JSON.parse(localStorage.getItem('busStop_'+routeKey) || 'null');
@@ -334,7 +445,8 @@ function setPickedStop(routeKey, stop){
 
 function renderBusSkeleton(){
   const wrap = document.getElementById('busCards');
-  wrap.innerHTML = BUS_ROUTES.map(r=>{
+  const routes = getBusRoutes();
+  wrap.innerHTML = routes.map(r=>{
     const picked = getPickedStop(r.key);
     return `<div class="card" id="bus-${r.key}">
       <div class="card-head">
@@ -342,25 +454,42 @@ function renderBusSkeleton(){
           <span class="tag" style="background:${r.color}">${r.tag}</span>
           <div>
             <div class="card-name">${picked ? picked.StopName : '尚未選擇站牌'}</div>
-            <div class="card-sub">${picked ? (picked.dirLabel||'') : '點右側齒輪設定常用站牌'}</div>
+            <div class="card-sub">${picked ? (picked.dirLabel||'') : '點齒輪設定常用站牌'}</div>
           </div>
         </div>
-        <button class="gearbtn" data-route="${r.key}">⚙️</button>
+        <div class="btnrow">
+          <button class="gearbtn" data-route="${r.key}" data-act="edit">⚙️</button>
+          <button class="gearbtn" data-route="${r.key}" data-act="del">🗑️</button>
+        </div>
       </div>
       <div class="etalist" id="bus-eta-${r.key}"><div class="muted">${picked?'載入中…':'尚未設定'}</div></div>
     </div>`;
-  }).join('');
-  wrap.querySelectorAll('.gearbtn').forEach(btn=>{
+  }).join('') + `
+    <div class="card addroute" id="addRouteCard">
+      <div style="color:var(--accent); font-weight:700; font-size:14px; text-align:center;">＋ 新增公車路線</div>
+    </div>`;
+  wrap.querySelectorAll('.gearbtn[data-act="edit"]').forEach(btn=>{
     btn.onclick = ()=> openStopPicker(btn.dataset.route);
   });
+  wrap.querySelectorAll('.gearbtn[data-act="del"]').forEach(btn=>{
+    btn.onclick = ()=>{
+      const r = routes.find(x=>x.key===btn.dataset.route);
+      if(confirm(`確定要移除「${r?r.tag:''}」這條路線嗎？`)){
+        removeBusRoute(btn.dataset.route);
+        renderBusSkeleton();
+      }
+    };
+  });
+  document.getElementById('addRouteCard').onclick = openAddRoute;
 }
 
 async function loadBusEta(routeKey){
   const picked = getPickedStop(routeKey);
   const box = document.getElementById('bus-eta-'+routeKey);
+  if(!box) return;
   if(!picked){ box.innerHTML = '<div class="muted">尚未設定站牌</div>'; return; }
   try{
-    const route = BUS_ROUTES.find(r=>r.key===routeKey);
+    const route = getBusRoutes().find(r=>r.key===routeKey);
     const filter = encodeURIComponent(`RouteName/Zh_tw eq '${route.name}'`);
     const data = await tdxGet(`/v2/Bus/EstimatedTimeOfArrival/City/Kaohsiung?$filter=${filter}`);
     const stop = (data||[]).find(s=> s.StopUID === picked.StopUID);
@@ -384,8 +513,11 @@ document.getElementById('closeSheet').onclick = ()=> overlay.classList.remove('s
 overlay.onclick = (e)=>{ if(e.target===overlay) overlay.classList.remove('show'); };
 
 async function openStopPicker(routeKey){
-  const route = BUS_ROUTES.find(r=>r.key===routeKey);
+  const route = getBusRoutes().find(r=>r.key===routeKey);
   document.getElementById('sheetTitle').textContent = route.name + ' — 選擇站牌';
+  const hint = document.getElementById('sheetHint');
+  hint.style.display = 'block';
+  hint.textContent = '選你平常上車的站牌，之後首頁只顯示這一站的到站時間。';
   const body = document.getElementById('sheetBody');
   body.innerHTML = '<div class="muted">載入中…</div>';
   overlay.classList.add('show');
@@ -434,9 +566,60 @@ async function openStopPicker(routeKey){
 
 document.getElementById('settingsBtn').onclick = ()=>{
   // open picker for first unconfigured route, or first route
-  const target = BUS_ROUTES.find(r=>!getPickedStop(r.key)) || BUS_ROUTES[0];
-  openStopPicker(target.key);
+  const routes = getBusRoutes();
+  const target = routes.find(r=>!getPickedStop(r.key)) || routes[0];
+  if(target) openStopPicker(target.key);
 };
+
+/* ---- 新增路線 ---- */
+async function openAddRoute(){
+  document.getElementById('sheetTitle').textContent = '新增公車路線';
+  document.getElementById('sheetHint').style.display = 'none';
+  const body = document.getElementById('sheetBody');
+  body.innerHTML = `
+    <div style="display:flex; gap:8px; margin-bottom:10px;">
+      <input id="routeSearchInput" type="text" placeholder="輸入路線名稱，例如 88" inputmode="search"
+        style="flex:1; min-width:0; padding:10px 12px; border-radius:10px; border:1px solid var(--border); background:var(--bg); color:var(--text); font-size:14px;">
+      <button id="routeSearchBtn" style="background:var(--accent); color:#fff; border:none; border-radius:10px; padding:0 16px; font-weight:700; flex-shrink:0;">搜尋</button>
+    </div>
+    <div id="routeSearchResults" class="muted">輸入路線名稱後按搜尋（僅限高雄市區公車路線）</div>
+  `;
+  overlay.classList.add('show');
+  const input = document.getElementById('routeSearchInput');
+  const doSearch = async ()=>{
+    const kw = input.value.trim();
+    const results = document.getElementById('routeSearchResults');
+    if(!kw){ results.innerHTML = '<div class="muted">請輸入關鍵字</div>'; return; }
+    results.innerHTML = '<div class="muted">搜尋中…</div>';
+    try{
+      const filter = encodeURIComponent(`contains(RouteName/Zh_tw,'${kw}')`);
+      const data = await tdxGet(`/v2/Bus/Route/City/Kaohsiung?$filter=${filter}&$top=15`);
+      if(!data || !data.length){ results.innerHTML = '<div class="muted">查無符合的路線</div>'; return; }
+      const existing = getBusRoutes().map(r=>r.name);
+      results.innerHTML = data.map(r=>{
+        const name = r.RouteName.Zh_tw;
+        const op = (r.Operators && r.Operators[0] && r.Operators[0].OperatorName.Zh_tw) || '';
+        const already = existing.includes(name);
+        return `<div class="stopitem">
+          <div><div class="n">${name}</div><div class="d">${op}</div></div>
+          <button data-name="${name}" ${already?'disabled':''}>${already?'已加入':'加入'}</button>
+        </div>`;
+      }).join('');
+      results.querySelectorAll('button[data-name]').forEach(btn=>{
+        btn.onclick = ()=>{
+          addBusRoute(btn.dataset.name);
+          overlay.classList.remove('show');
+          renderBusSkeleton();
+          refreshAll();
+        };
+      });
+    }catch(e){
+      results.innerHTML = `<div class="err">⚠️ ${e.message}</div>`;
+    }
+  };
+  document.getElementById('routeSearchBtn').onclick = doSearch;
+  input.addEventListener('keydown', e=>{ if(e.key==='Enter') doSearch(); });
+}
 
 /* ====================== 主流程 ====================== */
 async function refreshAll(){
@@ -444,7 +627,7 @@ async function refreshAll(){
   await Promise.all([
     loadTRA(),
     loadKRTC(),
-    ...BUS_ROUTES.map(r=>loadBusEta(r.key))
+    ...getBusRoutes().map(r=>loadBusEta(r.key))
   ]);
   document.getElementById('updatedAt').textContent = '最後更新 ' + nowStr();
 }
@@ -454,7 +637,7 @@ document.getElementById('refreshBtn').onclick = refreshAll;
 renderKrtcSkeleton();
 renderBusSkeleton();
 refreshAll();
-setInterval(refreshAll, 60000);
+setInterval(refreshAll, 45000);
 </script>
 </body>
 </html>
