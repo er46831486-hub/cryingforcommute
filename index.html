@@ -162,6 +162,25 @@
   .eta .min.late{color:var(--sub);}
   .eta .cap{font-size:10.5px; color:var(--sub); margin-top:2px; white-space:normal; line-height:1.25;}
 
+  /* 公車站牌＋時間的「一列一站」模組：站名跟時間在同一行，左右對齊，
+     不用像方塊排法那樣自己對應上面的站名跟下面的數字。 */
+  .busStopList{
+    margin-top:11px; border:1px solid var(--border); border-radius:var(--radius-sm);
+    overflow:hidden;
+  }
+  .busStopRow{
+    display:flex; justify-content:space-between; align-items:center; gap:10px;
+    padding:10px 12px; background:var(--bg);
+  }
+  .busStopRow + .busStopRow{ border-top:1px solid var(--border); }
+  .busStopName{ font-size:13.5px; font-weight:600; min-width:0; }
+  .busStopTime{
+    font-size:16.5px; font-weight:800; color:var(--accent); font-variant-numeric:tabular-nums;
+    flex-shrink:0; text-align:right;
+  }
+  .busStopTime.soon{ color:var(--good); }
+  .busStopTime.late{ color:var(--sub); font-size:12px; }
+
   .muted{color:var(--sub); font-size:13px; padding:8px 2px;}
   .err{color:var(--bad); font-size:12.5px; padding:8px 2px; display:flex; align-items:center; gap:8px; flex-wrap:wrap;}
   .err button{background:var(--bad); color:#fff; border:none; border-radius:8px; font-size:11.5px; font-weight:700; padding:5px 10px;}
@@ -270,7 +289,7 @@
    因為根本沒抓到新版程式碼。這裡每次打開頁面都會用 no-store 重新跟伺服器要一次
    最新的 index.html，比對版本字串，不一樣就自動強制重新整理一次拿到最新版，
    不用使用者自己想辦法清快取。 */
-const APP_VERSION = '2026091708';
+const APP_VERSION = '2026091709';
 (function selfUpdateCheck(){
   try{
     const guardKey = 'appVersionReloadGuard';
@@ -1000,12 +1019,11 @@ function renderBusSkeleton(){
         <div class="card-title">
           <span class="tag" style="background:${r.color}">${r.tag}</span>
           <div class="card-titletext">
-            <div class="card-name">${hasPicked ? picked.map(s=>s.StopName).join('、') : modeLabel+'尚未選站牌'}</div>
-            <div class="card-sub">${hasPicked ? (modeLabel+'站') : '點齒輪設定'}</div>
+            <div class="card-sub" style="margin-top:0;">${hasPicked ? modeLabel : modeLabel+'尚未選站牌'}</div>
           </div>
         </div>
       </div>
-      <div class="etalist" id="bus-eta-${r.key}"><div class="skeleton" style="${hasPicked?'':'display:none;'}"></div>${hasPicked?'':'<div class=\"muted\">尚未設定站牌</div>'}</div>
+      <div class="busStopList" id="bus-eta-${r.key}">${hasPicked ? '<div class="skeleton"></div>' : '<div class="muted">點齒輪設定</div>'}</div>
       <div class="busActions">
         <button class="gearbtn" data-route="${r.key}" data-act="edit">編輯站牌</button>
         <button class="gearbtn ghost" data-route="${r.key}" data-act="del">刪除路線</button>
@@ -1045,20 +1063,22 @@ function renderBusSkeleton(){
 // 「目前沒有預估到站資訊」，使用者沒辦法分辨是「壞了」還是「今天真的沒車了」。
 // 現在依 StopStatus 給出明確原因，一眼就能判斷是不是程式問題。
 const BUS_STATUS_NOTE = { 2:'交管不停靠', 3:'末班已過', 4:'今日未營運' };
-function busEtaBoxHtml(label, stop){
+// 站名跟到站時間放在「同一列」裡，左邊站名、右邊時間，一眼就能對起來，
+// 不再是上面一排站名、下面一排數字兩邊脫鉤、要自己對應的排法。
+function busStopRowHtml(label, stop){
   const hasTime = stop && (stop.EstimateTime != null || stop.NextBusTime);
   if(!hasTime){
     const note = (stop && BUS_STATUS_NOTE[stop.StopStatus]) || '無資訊';
-    return `<div class="eta"><div class="min late" style="font-size:12px;">${note}</div><div class="cap">${label}</div></div>`;
+    return `<div class="busStopRow"><div class="busStopName">${label}</div><div class="busStopTime late">${note}</div></div>`;
   }
   const m = stop.EstimateTime!=null ? Math.round(stop.EstimateTime/60) : minutesFrom(stop.NextBusTime);
-  return `<div class="eta"><div class="min ${etaClass(m)}">${fmtMin(m)}</div><div class="cap">${label}</div></div>`;
+  return `<div class="busStopRow"><div class="busStopName">${label}</div><div class="busStopTime ${etaClass(m)}">${fmtMin(m)}</div></div>`;
 }
-// entries: [{label, stop}]，一條路線設定了幾個站牌，就畫幾個到站方塊。
+// entries: [{label, stop}]，一條路線設定了幾個站牌，就畫幾列。
 function renderBusEtaList(box, entries, stale, errMsg){
   if(!box) return;
   if(!entries.length){ box.innerHTML = '<div class="muted">尚未設定站牌</div>'; return; }
-  box.innerHTML = entries.map(({label, stop})=> busEtaBoxHtml(label, stop)).join('')
+  box.innerHTML = entries.map(({label, stop})=> busStopRowHtml(label, stop)).join('')
     + (stale ? `<div class="staleNote">更新失敗，顯示上次資料${errMsg?'（'+errMsg+'）':''}</div>` : '');
 }
 
