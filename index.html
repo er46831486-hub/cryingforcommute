@@ -289,7 +289,7 @@
    因為根本沒抓到新版程式碼。這裡每次打開頁面都會用 no-store 重新跟伺服器要一次
    最新的 index.html，比對版本字串，不一樣就自動強制重新整理一次拿到最新版，
    不用使用者自己想辦法清快取。 */
-const APP_VERSION = '2026091709';
+const APP_VERSION = '2026091710';
 (function selfUpdateCheck(){
   try{
     const guardKey = 'appVersionReloadGuard';
@@ -896,6 +896,15 @@ function renderKrtcTabsUI(){
   document.getElementById('krtcStationName').textContent = st.name + ' 站';
 }
 
+// 末班車前後，KRTC 會出現「往高雄車站」這種目的地剛好等於「你現在所在站」的班次——
+// 不是資料錯誤或程式 bug，是這班車本來就是「開到這站就結束、不再往前」的收班車。
+// 原本直接照 TripHeadSign 顯示會讓人誤以為打錯字或抓錯資料，這裡把這種自己等於自己的
+// 情形換成更好懂的說法。
+function krtcHeadsignLabel(headsign, stationName){
+  if(headsign === '往'+stationName) return '本站為終點';
+  return headsign;
+}
+
 function renderKrtcFromCache(stale, errMsg){
   const box = document.getElementById('krtc-eta');
   if(!box) return;
@@ -914,7 +923,7 @@ function renderKrtcFromCache(stale, errMsg){
     const m = t.EstimateTime; // 已經是分鐘
     return `<div class="eta">
       <div class="min ${etaClass(m)}">${krtcMinuteLabel(m)}</div>
-      <div class="cap">${t.TripHeadSign}</div>
+      <div class="cap">${krtcHeadsignLabel(t.TripHeadSign, st.name)}</div>
     </div>`;
   }).join('') + (stale ? `<div class="staleNote">更新失敗，顯示上次資料${errMsg?'（'+errMsg+'）':''}</div>` : '');
 }
@@ -966,7 +975,7 @@ async function openKrtcDetail(stationKey){
     html += trains.length ? trains.map(t=>{
       const m = t.EstimateTime;
       return `<div class="stopitem">
-        <div><div class="n">${t.TripHeadSign}</div><div class="d">${(t.LineName&&t.LineName.Zh_tw)||''}</div></div>
+        <div><div class="n">${krtcHeadsignLabel(t.TripHeadSign, st.name)}</div><div class="d">${(t.LineName&&t.LineName.Zh_tw)||''}</div></div>
         <div style="font-weight:800; color:var(--accent);">${krtcMinuteLabel(m)}</div>
       </div>`;
     }).join('') : '<div class="muted">目前沒有班次資訊，請先按重新整理</div>';
