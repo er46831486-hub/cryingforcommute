@@ -247,8 +247,8 @@
 <div class="updatedRow" id="updatedRow">載入中…</div>
 
 <!-- TRA -->
-<div class="section-title" id="traTitle"><span class="sectionIcon" id="icon-tra"></span>台鐵<span class="chev accChev">›</span></div>
-<div class="hero accBody" id="traBody">
+<div class="section-title open" id="traTitle"><span class="sectionIcon" id="icon-tra"></span>台鐵<span class="chev accChev">›</span></div>
+<div class="hero accBody open" id="traBody">
   <div style="display:flex; justify-content:space-between; align-items:flex-start;">
     <div class="hero-route" id="traRouteLabel">—</div>
     <button class="rangeBtn" id="traRangeBtn">自訂區間</button>
@@ -258,17 +258,17 @@
   </div>
 </div>
 
-<div class="section-title" id="krtcTitle"><span class="sectionIcon" id="icon-krtc"></span>高雄捷運<span class="chev accChev">›</span></div>
-<div id="krtcCards" class="accBody"></div>
+<div class="section-title open" id="krtcTitle"><span class="sectionIcon" id="icon-krtc"></span>高雄捷運<span class="chev accChev">›</span></div>
+<div id="krtcCards" class="accBody open"></div>
 
-<div class="section-title" id="busTitle"><span class="sectionIcon" id="icon-bus"></span>公車<span class="chev accChev">›</span></div>
-<div id="busCards" class="accBody"></div>
+<div class="section-title open" id="busTitle"><span class="sectionIcon" id="icon-bus"></span>公車<span class="chev accChev">›</span></div>
+<div id="busCards" class="accBody open"></div>
 
-<div class="section-title" id="bikeTitle"><span class="sectionIcon" id="icon-bike"></span>YouBike<span class="chev accChev">›</span></div>
-<div id="youbikeCard" class="accBody"></div>
+<div class="section-title open" id="bikeTitle"><span class="sectionIcon" id="icon-bike"></span>YouBike<span class="chev accChev">›</span></div>
+<div id="youbikeCard" class="accBody open"></div>
 
-<div class="section-title" id="ptTitle"><span class="sectionIcon" id="icon-ptbus"></span>屏東客運<span class="chev accChev">›</span></div>
-<div id="ptCards" class="accBody"></div>
+<div class="section-title open" id="ptTitle"><span class="sectionIcon" id="icon-ptbus"></span>屏東客運<span class="chev accChev">›</span></div>
+<div id="ptCards" class="accBody open"></div>
 
 <div class="footer">
   資料來源：TDX 運輸資料流通服務平臺<br>每 30 秒自動更新（背景時暫停）· 點卡片看更多細節
@@ -287,7 +287,7 @@
 <script>
 // 自動偵測舊版本、強制更新：iOS 加入主畫面沒有網址列、Safari 又愛快取整份 HTML，
 // 用 no-store 重抓一次比對版本字串，不同就自動 reload 一次拿新版，不用使用者清快取。
-const APP_VERSION = '2026091713';
+const APP_VERSION = '2026091715';
 (function selfUpdateCheck(){
   try{
     const guardKey = 'appVersionReloadGuard';
@@ -505,7 +505,11 @@ function minutesFrom(dateStr){
   const diffMs = new Date(dateStr).getTime() - Date.now();
   return Math.max(0, Math.round(diffMs/60000));
 }
-function fmtMin(m){ return m<=0 ? '進站' : m+'分'; }
+function fmtMin(m){
+  if(m<=0) return '進站';
+  if(m<60) return m+'分';
+  return Math.floor(m/60)+'小時'+(m%60 ? (m%60)+'分' : '');
+}
 function etaClass(m){ return m<=2 ? 'soon' : (m>=15 ? 'late' : ''); }
 function nowStr(){
   return new Date().toLocaleTimeString('zh-TW',{hour:'2-digit',minute:'2-digit'});
@@ -1052,7 +1056,7 @@ function renderBusSkeleton(){
       </div>
       <div class="busStopList" id="bus-eta-${r.key}">${hasPicked ? '<div class="skeleton"></div>' : '<div class="muted">點齒輪設定</div>'}</div>
       <div class="busActions">
-        <button class="gearbtn" data-route="${r.key}" data-act="sched">今日班表</button>
+        <button class="gearbtn" data-route="${r.key}" data-act="sched">Google地圖時刻表</button>
         <button class="gearbtn" data-route="${r.key}" data-act="edit">編輯站牌</button>
         <button class="gearbtn ghost" data-route="${r.key}" data-act="del">刪除路線</button>
       </div>
@@ -1064,8 +1068,8 @@ function renderBusSkeleton(){
       e.stopPropagation();
       const r = routes.find(x=>x.key===btn.dataset.route);
       const picked = getPickedStops(r.key, mode);
-      if(!picked.length){ alert('請先設定站牌後再查看班表'); return; }
-      openBusSchedule('city', r.name, picked);
+      const stopName = picked.length ? picked[0].StopName : '';
+      openInGoogleMaps(r.name, stopName);
     };
   });
   wrap.querySelectorAll('.gearbtn[data-act="edit"]').forEach(btn=>{
@@ -1096,7 +1100,7 @@ function renderBusSkeleton(){
 
 // StopStatus 官方定義：0=正常, 1=尚未發車, 2=交管不停靠, 3=末班車已過, 4=今日未營運。
 // 依狀態給明確原因文字，才能分辨是「今天真的沒車」還是程式壞掉。
-const BUS_STATUS_NOTE = { 2:'交管不停靠', 3:'末班已過', 4:'今日未營運' };
+const BUS_STATUS_NOTE = { 1:'尚未發車', 2:'交管不停靠', 3:'末班已過', 4:'今日未營運' };
 // 站名跟到站時間放在「同一列」裡，左邊站名、右邊時間，一眼就能對起來，
 // 不再是上面一排站名、下面一排數字兩邊脫鉤、要自己對應的排法。
 function busStopRowHtml(label, stop){
@@ -1189,68 +1193,12 @@ async function loadAllBusEta(){
   }
 }
 
-// 公車今日全部班次：高雄市區公車用 DailyTimeTable、屏東客運等公路客運用 Schedule，
-// 兩者回傳的 Timetables/StopTimes 結構相同，共用同一個畫面渲染邏輯即可。
-// 注意：高雄市區公車的即時到站（EstimatedTimeOfArrival）跟這份全天班表是兩份不同
-// 資料來源，同一個實體站牌在兩邊的 StopUID／站名常常對不起來（查證過，不是我方 bug），
-// 沒辦法直接用使用者設定好的 StopUID 去比對；抓不到時改用站名比對，還是抓不到
-// 就列出這條路線所有站牌讓使用者自己點一個看時刻。
-const BUS_SCHEDULE_TTL = 6*3600*1000;
-function coreStopName(n){ return (n||'').replace(/[\(（][^)）]*[\)）]/g,'').trim(); }
-async function openBusSchedule(network, routeName, stops){
-  document.getElementById('sheetTitle').textContent = routeName + ' — 今日班表';
-  document.getElementById('sheetHint').style.display = 'none';
-  const body = document.getElementById('sheetBody');
-  body.innerHTML = '<div class="muted">載入中…</div>';
-  overlay.classList.add('show');
-  const path = network==='city'
-    ? `/v2/Bus/DailyTimeTable/City/Kaohsiung?$filter=${encodeURIComponent(`RouteName/Zh_tw eq '${routeName}'`)}`
-    : `/v2/Bus/Schedule/InterCity/${encodeURIComponent(routeName)}`;
-
-  const timesAtStopUID = (data, uid)=>{
-    const times = [];
-    (data||[]).forEach(entry=> (entry.Timetables||[]).forEach(tt=>{
-      const st = (tt.StopTimes||[]).find(x=> x.StopUID===uid);
-      if(st) times.push(st.DepartureTime || st.ArrivalTime);
-    }));
-    return times.sort();
-  };
-  const renderTimes = (stopLabel, times)=>{
-    body.innerHTML = times.length
-      ? `<div class="muted" style="padding:2px 2px 10px;">上車站：${stopLabel}・共 ${times.length} 班</div>`
-        + times.map(t=>`<div class="stopitem"><div class="n">${t}</div></div>`).join('')
-      : '<div class="muted">查無這個站牌的今日班表資料</div>';
-  };
-  const render = (data)=>{
-    const allStops = new Map();
-    (data||[]).forEach(entry=> (entry.Timetables[0]?.StopTimes||[]).forEach(st=>{
-      allStops.set(st.StopUID, st.StopName.Zh_tw);
-    }));
-    let matchUid = null, matchLabel = null;
-    for(const p of stops){
-      if(allStops.has(p.StopUID)){ matchUid = p.StopUID; matchLabel = allStops.get(p.StopUID); break; }
-      const pCore = coreStopName(p.StopName);
-      const found = [...allStops.entries()].find(([,name])=> coreStopName(name)===pCore || name.includes(pCore) || pCore.includes(coreStopName(name)));
-      if(found){ matchUid = found[0]; matchLabel = found[1]; break; }
-    }
-    if(matchUid){ renderTimes(matchLabel, timesAtStopUID(data, matchUid)); return; }
-    if(!allStops.size){ body.innerHTML = '<div class="muted">查無今日班表資料</div>'; return; }
-    body.innerHTML = `<p class="hint">自動比對不到你設定的站牌，這條路線的班表用了不同的站牌資料，請手動選一個站牌查看時刻：</p>`
-      + [...allStops.entries()].map(([uid,name])=>`<div class="stopitem clickable" data-uid="${uid}"><div class="n">${name}</div></div>`).join('');
-    body.querySelectorAll('.stopitem[data-uid]').forEach(el=>{
-      el.onclick = ()=> renderTimes(el.dataset.uid && allStops.get(el.dataset.uid), timesAtStopUID(data, el.dataset.uid));
-    });
-  };
-  const cacheKey = 'busSched_'+network+'_'+routeName;
-  const cached = loadCache(cacheKey, BUS_SCHEDULE_TTL);
-  if(cached) render(cached);
-  try{
-    const data = await tdxGet(path, 'high');
-    saveCache(cacheKey, data || []);
-    render(data || []);
-  }catch(e){
-    if(!cached) body.innerHTML = errBox(e.message, ()=>openBusSchedule(network, routeName, stops));
-  }
+// 查證過 TDX 的公車全天班表（DailyTimeTable／Schedule）跟 Google 地圖實際查到的班次對不起來
+// （TDX 這份資料把同一路線的好幾個支線／子路線班表混在一起，跟真實情況差很多），
+// 與其顯示一份可能不準的班表，不如直接開 Google 地圖讓使用者看即時、正確的資訊，不自己編資料。
+function openInGoogleMaps(routeName, stopName){
+  const q = encodeURIComponent(`${routeName} ${stopName}`);
+  window.open(`https://www.google.com/maps/search/?api=1&query=${q}`, '_blank');
 }
 
 /* ====================== 屏東客運（8202／8203／8208，固定站牌，不可編輯） ====================== */
@@ -1280,14 +1228,14 @@ function renderPtBusSkeleton(){
           <span class="tag" style="background:${r.color}">${r.name}</span>
           <div class="card-titletext"><div class="card-sub" style="margin-top:0;">上車站：${stop.StopName}</div></div>
         </div>
-        <button class="gearbtn" data-route="${r.key}">今日班表</button>
+        <button class="gearbtn" data-route="${r.key}">Google地圖時刻表</button>
       </div>
       <div class="busStopList" id="pt-eta-${r.key}"><div class="skeleton"></div></div>
     </div>`).join('');
   wrap.querySelectorAll('.gearbtn[data-route]').forEach(btn=>{
     btn.onclick = ()=>{
       const r = PT_BUS_ROUTES.find(x=>x.key===btn.dataset.route);
-      openBusSchedule('intercity', r.name, [stop]);
+      openInGoogleMaps(r.name, stop.StopName);
     };
   });
   PT_BUS_ROUTES.forEach(r=>{
